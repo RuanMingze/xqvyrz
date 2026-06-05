@@ -3,22 +3,233 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>新建标签页</title>
+  <title>Xqvyrz</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
     html, body {
       width: 100%; height: 100%;
       overflow: hidden;
-      background: #0a0a0a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-    iframe {
-      width: 100%;
-      height: 100%;
+
+    /* iframe 全屏模式 */
+    #online-view {
+      width: 100%; height: 100%;
       border: none;
+      display: block;
+    }
+
+    /* 离线回退页面 */
+    #offline-view {
+      display: none;
+      width: 100%; min-height: 100vh;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      padding: 40px 20px;
+    }
+    #offline-view.active { display: flex; }
+
+    .brand {
+      font-weight: 600;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      font-size: clamp(1rem, 2vw, 1.4rem);
+      color: rgba(255,255,255,0.7);
+      text-shadow: 0 2px 20px rgba(0,0,0,0.3);
+      margin-bottom: 24px;
+    }
+
+    .clock {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .clock-time {
+      font-size: clamp(4.5rem, 12vw, 9rem);
+      font-weight: 200;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      text-shadow: 0 1px 30px rgba(0,0,0,0.2);
+    }
+    .clock-date {
+      margin-top: 8px;
+      font-size: clamp(0.8rem, 1.2vw, 1rem);
+      font-weight: 300;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.15em;
+    }
+
+    .search-area { width: 100%; max-width: 600px; }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 100%);
+      border: 1.5px solid rgba(255,255,255,0.13);
+      border-radius: 18px;
+      padding: 4px 6px 4px 18px;
+      gap: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.10);
+      transition: all 0.3s ease-out;
+    }
+    .search-bar:focus-within {
+      background: linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 100%);
+      border-color: rgba(255,255,255,0.20);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.28), 0 4px 16px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.05);
+    }
+
+    .search-icon {
+      flex-shrink: 0;
+      opacity: 0.25;
+      transition: opacity 0.25s;
+      color: #fff;
+    }
+    .search-bar:focus-within .search-icon { opacity: 0.55; }
+
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 17px 12px;
+      font-size: 15.5px;
+      font-weight: 350;
+      color: rgba(255,255,255,0.95);
+      letter-spacing: 0.01em;
+      caret-color: rgba(255,160,60,0.8);
+      -webkit-appearance: none;
+    }
+    .search-input::placeholder { color: rgba(255,255,255,0.35); }
+
+    .search-btn {
+      flex-shrink: 0;
+      width: 38px; height: 38px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      color: rgba(255,255,255,0.22);
+      opacity: 0.5;
+      transition: all 0.25s ease-out;
+    }
+    .search-btn.has-query {
+      background: linear-gradient(135deg, rgba(255,140,50,0.85), rgba(230,100,30,0.85));
+      color: #fff;
+      opacity: 1;
+      box-shadow: 0 2px 12px rgba(255,120,40,0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    .search-btn:hover.has-query {
+      transform: scale(1.04);
+      box-shadow: 0 4px 18px rgba(255,120,40,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+    }
+
+    .quick-links {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+    .quick-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 9px 18px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: rgba(255,255,255,0.48);
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.09);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      text-decoration: none;
+      transition: all 0.25s ease-out;
+    }
+    .quick-link:hover {
+      color: rgba(255,255,255,0.92);
+      background: rgba(255,255,255,0.14);
+      border-color: rgba(255,255,255,0.18);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,140,50,0.15);
+      transform: translateY(-1.5px);
+    }
+
+    .offline-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+      padding: 10px 20px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: rgba(255,180,100,0.85);
+      background: rgba(255,140,50,0.10);
+      border: 1px solid rgba(255,140,50,0.18);
+      animation: fadeSlideIn 0.5s ease-out;
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .offline-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: rgba(255,140,50,0.7);
+      flex-shrink: 0;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; transform: scale(0.9); }
+      50%      { opacity: 1;   transform: scale(1.1); }
     }
   </style>
 </head>
 <body>
-  <iframe src="https://search.ruanftrix.cn"></iframe>
+
+<!-- 在线：加载远程页面 -->
+<iframe id="online-view" src="https://search.ruanftrix.cn"></iframe>
+
+<!-- 离线：本地回退页面 -->
+<div id="offline-view">
+  <div class="offline-banner">
+    <span class="offline-dot"></span>
+    <span>当前无网络连接，已切换到离线模式</span>
+  </div>
+
+  <div class="brand">Xqvyrz</div>
+
+  <div class="clock">
+    <div class="clock-time" id="time"></div>
+    <div class="clock-date" id="date"></div>
+  </div>
+
+  <div class="search-area">
+    <form class="search-bar" id="searchForm">
+      <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <input class="search-input" type="text" id="query" placeholder="搜索互联网..." autocomplete="off" spellcheck="false" oninput="toggleBtn()" />
+      <button type="submit" class="search-btn" id="btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+      </button>
+    </form>
+
+    <div class="quick-links">
+      <a class="quick-link" href="https://www.bing.com/images" target="_blank">图片</a>
+      <a class="quick-link" href="https://www.bing.com/videos" target="_blank">视频</a>
+      <a class="quick-link" href="https://www.bing.com/maps" target="_blank">地图</a>
+      <a class="quick-link" href="https://www.bing.com/news" target="_blank">新闻</a>
+      <a class="quick-link" href="https://www.bing.com/translator" target="_blank">翻译</a>
+    </div>
+</div>
+
+<script src="newtab.js"></script>
+
 </body>
 </html>
