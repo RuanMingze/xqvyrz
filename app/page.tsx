@@ -231,7 +231,7 @@ export default function Home() {
               </div>
               <input
                 ref={inputRef}
-                type="search"
+                type="text"
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
@@ -245,6 +245,7 @@ export default function Home() {
                   fontWeight: 350,
                   letterSpacing: "0.01em",
                   textShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                  WebkitAppearance: "none",
                 }}
                 autoComplete="off"
                 spellCheck={false}

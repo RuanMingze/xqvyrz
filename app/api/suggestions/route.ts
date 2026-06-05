@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "edge";
 export const maxDuration = 5;
 
 /** 搜狗搜索联想 API */

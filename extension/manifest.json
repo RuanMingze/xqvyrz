@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Xqvyrz",
+  "version": "1.0.0",
+  "description": "将浏览器新标签页替换为 Xqvyrz 搜索引擎 (search.ruanftrix.cn)",
+  "author": "Ruanftrix",
+  "homepage_url": "https://ruanftrix.cn",
+  "icons": {
+    "16": "assets/1616.png",
+    "32": "assets/3232.png",
+    "48": "assets/4848.png",
+    "128": "assets/128128.png"
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "permissions": []
+}
