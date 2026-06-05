@@ -203,47 +203,48 @@ export default function Home() {
         </div>
 
         {/* Search area */}
-        <div className="w-full max-w-[560px]">
-          <div className="relative">
-            {/* Search bar */}
+        <div className="w-full max-w-[600px]">
+          <div className="relative" style={{ transform: "translateZ(0)" }}>
+            {/* Search bar - Glassmorphism 2.0 */}
             <div
-              className="flex items-center transition-all duration-300"
+              className="flex items-center transition-all duration-300 ease-out"
               style={{
                 background: isActive
-                  ? "rgba(255,255,255,0.12)"
-                  : "rgba(255,255,255,0.08)",
-                backdropFilter: "blur(24px) saturate(1.2)",
-                WebkitBackdropFilter: "blur(24px) saturate(1.2)",
-                borderRadius: showSuggestions && suggestions.length > 0 ? "20px 20px 0 0" : "20px",
-                border: `1px solid ${isActive ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.12)"}`,
-                borderBottom: showSuggestions && suggestions.length > 0
-                  ? "1px solid rgba(255,255,255,0.06)"
-                  : isActive
-                    ? "1px solid rgba(255,255,255,0.18)"
-                    : "1px solid rgba(255,255,255,0.12)",
+                  ? "linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 100%)"
+                  : "linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 100%)",
+                backdropFilter: "blur(16px) saturate(180%) brightness(1.05)",
+                WebkitBackdropFilter: "blur(16px) saturate(180%) brightness(1.05)",
+                borderRadius: showSuggestions && suggestions.length > 0 ? "18px 18px 0 0" : "18px",
+                borderWidth: "1.5px",
+                borderStyle: "solid",
+                borderColor: isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
+                borderBottomColor: showSuggestions && suggestions.length > 0
+                  ? "rgba(255,255,255,0.08)"
+                  : isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
                 boxShadow: isActive
-                  ? "0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.12)"
-                  : "0 2px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)",
+                  ? "0 12px 40px rgba(0,0,0,0.28), 0 4px 16px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.05)"
+                  : "0 4px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.10)",
               }}
             >
-              <div className="pl-5 shrink-0" style={{ opacity: isActive ? 0.6 : 0.35, transition: "opacity 0.2s" }}>
-                <Search size={17} strokeWidth={1.8} style={{ color: "white" }} />
+              <div className="pl-[18px] shrink-0" style={{ opacity: isActive ? 0.55 : 0.25, transition: "opacity 0.25s ease" }}>
+                <Search size={18} strokeWidth={1.8} style={{ color: "#ffffff" }} />
               </div>
               <input
                 ref={inputRef}
-                type="text"
+                type="search"
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 onFocus={() => { setIsFocused(true); if (query) setShowSuggestions(true); }}
                 onBlur={() => setIsFocused(false)}
-                placeholder="搜索"
-                className="flex-1 bg-transparent px-4 py-[15px] text-[15px] outline-none"
+                placeholder="搜索互联网..."
+                className="flex-1 bg-transparent px-4 py-[17px] text-[15.5px] outline-none"
                 style={{
-                  color: "rgba(255,255,255,0.9)",
-                  caretColor: "rgba(255,255,255,0.7)",
-                  fontWeight: 300,
-                  letterSpacing: "0.02em",
+                  color: "rgba(255,255,255,0.95)",
+                  caretColor: "rgba(255,160,60,0.8)",
+                  fontWeight: 350,
+                  letterSpacing: "0.01em",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.2)",
                 }}
                 autoComplete="off"
                 spellCheck={false}
@@ -256,69 +257,83 @@ export default function Home() {
                     setShowSuggestions(false);
                     inputRef.current?.focus();
                   }}
-                  className="mr-2 p-1.5 rounded-full"
+                  className="mr-1.5 p-[7px] rounded-full transition-all duration-200 ease-out"
                   style={{
-                    color: "rgba(255,255,255,0.3)",
-                    transition: "color 0.15s, background 0.15s",
+                    color: "rgba(255,255,255,0.28)",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.color = "rgba(255,255,255,0.7)";
-                    e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                    e.currentTarget.style.color = "rgba(255,255,255,0.75)";
+                    e.currentTarget.style.background = "rgba(255,255,255,0.12)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.color = "rgba(255,255,255,0.3)";
+                    e.currentTarget.style.color = "rgba(255,255,255,0.28)";
                     e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <X size={14} />
+                  <X size={15} strokeWidth={2} />
                 </button>
               )}
               <button
                 onClick={() => handleSearch()}
-                className="mr-3 p-2.5 rounded-[14px] transition-all duration-200"
+                className="mr-[6px] p-[9px] rounded-[12px] transition-all duration-250 ease-out"
                 style={{
-                  background: query ? "rgba(255,255,255,0.12)" : "transparent",
-                  color: query ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.3)",
+                  background: query
+                    ? "linear-gradient(135deg, rgba(255,140,50,0.85) 0%, rgba(230,100,30,0.85) 100%)"
+                    : "transparent",
+                  color: query ? "#ffffff" : "rgba(255,255,255,0.22)",
+                  boxShadow: query ? "0 2px 12px rgba(255,120,40,0.35), inset 0 1px 0 rgba(255,255,255,0.2)" : "none",
+                  opacity: query ? 1 : 0.5,
                 }}
                 onMouseEnter={(e) => {
                   if (query) {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.2)";
-                    e.currentTarget.style.color = "white";
+                    e.currentTarget.style.transform = "scale(1.04)";
+                    e.currentTarget.style.boxShadow = "0 4px 18px rgba(255,120,40,0.45), inset 0 1px 0 rgba(255,255,255,0.25)";
+                  } else {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.45)";
+                    e.currentTarget.style.background = "rgba(255,255,255,0.06)";
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = query ? "rgba(255,255,255,0.12)" : "transparent";
-                  e.currentTarget.style.color = query ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.3)";
+                  if (query) {
+                    e.currentTarget.style.transform = "scale(1)";
+                    e.currentTarget.style.boxShadow = "0 2px 12px rgba(255,120,40,0.35), inset 0 1px 0 rgba(255,255,255,0.2)";
+                  } else {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.22)";
+                    e.currentTarget.style.background = "transparent";
+                  }
                 }}
               >
-                <ArrowRight size={16} strokeWidth={2} />
+                <ArrowRight size={16} strokeWidth={2.2} />
               </button>
             </div>
 
-            {/* Suggestions */}
+            {/* Suggestions - Glassmorphism */}
             {showSuggestions && suggestions.length > 0 && (
               <div
                 ref={suggestionRef}
-                className="w-full overflow-hidden"
+                className="w-full overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
                 style={{
-                  background: "rgba(255,255,255,0.1)",
-                  backdropFilter: "blur(24px) saturate(1.2)",
-                  WebkitBackdropFilter: "blur(24px) saturate(1.2)",
-                  borderRadius: "0 0 20px 20px",
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.07) 100%)",
+                  backdropFilter: "blur(16px) saturate(180%)",
+                  WebkitBackdropFilter: "blur(16px) saturate(180%)",
+                  borderRadius: "0 0 18px 18px",
+                  border: "1.5px solid rgba(255,255,255,0.11)",
                   borderTop: "none",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.12)",
                 }}
               >
                 {suggestions.map((s, i) => (
                   <button
                     key={i}
-                    className="flex items-center gap-3 w-full px-6 py-3 text-left"
+                    className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left transition-colors duration-150"
                     style={{
                       background: i === activeSuggestion
-                        ? "rgba(255,255,255,0.08)"
+                        ? "rgba(255,255,255,0.09)"
                         : "transparent",
-                      transition: "background 0.12s",
+                      borderBottom:
+                        i < suggestions.length - 1
+                          ? "1px solid rgba(255,255,255,0.05)"
+                          : "none",
                     }}
                     onMouseEnter={() => setActiveSuggestion(i)}
                     onMouseLeave={() => setActiveSuggestion(-1)}
@@ -328,25 +343,26 @@ export default function Home() {
                     }}
                   >
                     <Search
-                      size={12}
+                      size={13}
                       strokeWidth={1.8}
                       style={{
                         color: i === activeSuggestion
-                          ? "rgba(255,255,255,0.4)"
-                          : "rgba(255,255,255,0.15)",
+                          ? "rgba(255,160,60,0.7)"
+                          : "rgba(255,255,255,0.18)",
                         flexShrink: 0,
-                        transition: "color 0.12s",
+                        transition: "color 0.15s",
                       }}
                     />
                     <span
                       style={{
                         fontSize: "14px",
-                        fontWeight: 300,
+                        fontWeight: 340,
                         color: i === activeSuggestion
-                          ? "rgba(255,255,255,0.9)"
-                          : "rgba(255,255,255,0.55)",
-                        letterSpacing: "0.02em",
-                        transition: "color 0.12s",
+                          ? "rgba(255,255,255,0.95)"
+                          : "rgba(255,255,255,0.58)",
+                        letterSpacing: "0.01em",
+                        textShadow: i === activeSuggestion ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                        transition: "color 0.15s, text-shadow 0.15s",
                       }}
                     >
                       {s}
@@ -357,8 +373,8 @@ export default function Home() {
             )}
           </div>
 
-          {/* Quick links */}
-          <div className="flex items-center justify-center gap-3 mt-6 flex-wrap">
+          {/* Quick links - Chip Style */}
+          <div className="flex items-center justify-center gap-2.5 mt-7 flex-wrap">
             {[
               { label: "图片", url: "https://www.bing.com/images" },
               { label: "视频", url: "https://www.bing.com/videos" },
@@ -371,23 +387,33 @@ export default function Home() {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="transition-all duration-200"
+                className="inline-flex items-center px-[18px] py-[9px] rounded-full transition-all duration-250 ease-out"
                 style={{
-                  color: "rgba(255,255,255,0.4)",
-                  fontSize: "12px",
-                  fontWeight: 300,
-                  letterSpacing: "0.08em",
-                  padding: "6px 14px",
-                  borderRadius: "100px",
-                  background: "transparent",
+                  fontSize: "12.5px",
+                  fontWeight: 400,
+                  letterSpacing: "0.04em",
+                  color: "rgba(255,255,255,0.48)",
+                  background: "rgba(255,255,255,0.07)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                  border: "1px solid rgba(255,255,255,0.09)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "rgba(255,255,255,0.75)";
-                  e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                  const el = e.currentTarget;
+                  el.style.color = "rgba(255,255,255,0.92)";
+                  el.style.background = "rgba(255,255,255,0.14)";
+                  el.style.borderColor = "rgba(255,255,255,0.18)";
+                  el.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,140,50,0.15)";
+                  el.style.transform = "translateY(-1.5px)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-                  e.currentTarget.style.background = "transparent";
+                  const el = e.currentTarget;
+                  el.style.color = "rgba(255,255,255,0.48)";
+                  el.style.background = "rgba(255,255,255,0.07)";
+                  el.style.borderColor = "rgba(255,255,255,0.09)";
+                  el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+                  el.style.transform = "translateY(0)";
                 }}
               >
                 {link.label}
