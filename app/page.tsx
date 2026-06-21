@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, X, ArrowRight } from "lucide-react";
+import { Search, X, ArrowRight, Settings, Plus, Trash2 } from "lucide-react";
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -45,6 +45,14 @@ function getDailyWallpaper(): string {
   return WALLPAPER_POOL[s % WALLPAPER_POOL.length];
 }
 
+const DEFAULT_QUICK_LINKS = [
+  { label: "图片", url: "https://www.bing.com/images" },
+  { label: "视频", url: "https://www.bing.com/videos" },
+  { label: "地图", url: "https://www.bing.com/maps" },
+  { label: "新闻", url: "https://www.bing.com/news" },
+  { label: "翻译", url: "https://www.bing.com/translator" },
+];
+
 export default function Home() {
   const wallpaper = useMemo(() => getDailyWallpaper(), []);
 
@@ -55,6 +63,13 @@ export default function Home() {
   const [isFocused, setIsFocused] = useState(false);
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
+  const [quickLinks, setQuickLinks] = useState<typeof DEFAULT_QUICK_LINKS>(DEFAULT_QUICK_LINKS);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsPosition, setSettingsPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [newLinkLabel, setNewLinkLabel] = useState("");
+  const [newLinkUrl, setNewLinkUrl] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
@@ -78,6 +93,35 @@ export default function Home() {
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("quickLinks");
+    if (saved) {
+      try {
+        setQuickLinks(JSON.parse(saved));
+      } catch {
+        // 忽略无效数据
+      }
+    }
+  }, []);
+
+  const saveQuickLinks = useCallback((links: typeof DEFAULT_QUICK_LINKS) => {
+    setQuickLinks(links);
+    localStorage.setItem("quickLinks", JSON.stringify(links));
+  }, []);
+
+  const removeQuickLink = useCallback((index: number) => {
+    const newLinks = quickLinks.filter((_, i) => i !== index);
+    saveQuickLinks(newLinks);
+  }, [quickLinks, saveQuickLinks]);
+
+  const addQuickLink = useCallback(() => {
+    if (!newLinkLabel.trim() || !newLinkUrl.trim()) return;
+    const newLink = { label: newLinkLabel.trim(), url: newLinkUrl.trim() };
+    saveQuickLinks([...quickLinks, newLink]);
+    setNewLinkLabel("");
+    setNewLinkUrl("");
+  }, [newLinkLabel, newLinkUrl, quickLinks, saveQuickLinks]);
 
   const fetchSuggestions = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -150,10 +194,48 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextPosition({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setSettingsPosition(contextPosition);
+    setShowSettings(true);
+    setShowContextMenu(false);
+  }, [contextPosition]);
+
+  useEffect(() => {
+    if (!showContextMenu) return;
+    const handler = () => setShowContextMenu(false);
+    document.addEventListener("click", handler);
+    document.addEventListener("contextmenu", handler);
+    return () => {
+      document.removeEventListener("click", handler);
+      document.removeEventListener("contextmenu", handler);
+    };
+  }, [showContextMenu]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-settings-panel]")) {
+        setShowSettings(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSettings]);
+
   const isActive = isFocused || query.length > 0;
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden flex flex-col items-center justify-center select-none">
+    <div
+      className="relative min-h-screen w-full overflow-hidden flex flex-col items-center justify-center select-none"
+      onContextMenu={handleContextMenu}
+    >
       <div className="absolute inset-0 bg-cover bg-center transition-[background-image] duration-1000" style={{ backgroundImage: `url(${wallpaper})` }} />
       <div
         className="absolute inset-0"
@@ -376,19 +458,13 @@ export default function Home() {
 
           {/* Quick links - Chip Style */}
           <div className="flex items-center justify-center gap-2.5 mt-7 flex-wrap">
-            {[
-              { label: "图片", url: "https://www.bing.com/images" },
-              { label: "视频", url: "https://www.bing.com/videos" },
-              { label: "地图", url: "https://www.bing.com/maps" },
-              { label: "新闻", url: "https://www.bing.com/news" },
-              { label: "翻译", url: "https://www.bing.com/translator" },
-            ].map((link) => (
+            {quickLinks.map((link, index) => (
               <a
-                key={link.label}
+                key={`${link.label}-${index}`}
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center px-[18px] py-[9px] rounded-full transition-all duration-250 ease-out"
+                className="inline-flex items-center px-[18px] py-[9px] rounded-full transition-all duration-250 ease-out group relative"
                 style={{
                   fontSize: "12.5px",
                   fontWeight: 400,
@@ -421,15 +497,197 @@ export default function Home() {
               </a>
             ))}
           </div>
+
+          {/* Context menu - 右键菜单 */}
+          {showContextMenu && (
+            <div
+              className="fixed w-[180px] rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
+              style={{
+                zIndex: 100,
+                left: Math.min(contextPosition.x, window.innerWidth - 200),
+                top: Math.min(contextPosition.y, window.innerHeight - 100),
+                background: "rgba(30,30,35,0.96)",
+                backdropFilter: "blur(20px) saturate(180%)",
+                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={openSettings}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors"
+                style={{
+                  fontSize: "13px",
+                  color: "rgba(255,255,255,0.8)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,140,50,0.15)";
+                  e.currentTarget.style.color = "#ffffff";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "rgba(255,255,255,0.8)";
+                }}
+              >
+                <Settings size={14} strokeWidth={1.8} />
+                快速链接设置
+              </button>
+            </div>
+          )}
+
+          {/* Settings panel - 设置面板 */}
+          {showSettings && (
+            <div
+              data-settings-panel
+              className="fixed w-[320px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
+              style={{
+                zIndex: 100,
+                left: Math.min(settingsPosition.x, window.innerWidth - 340),
+                top: Math.min(settingsPosition.y, window.innerHeight - 400),
+                background: "linear-gradient(135deg, rgba(30,30,35,0.97) 0%, rgba(20,20,25,0.99) 100%)",
+                backdropFilter: "blur(24px) saturate(180%)",
+                WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "rgba(255,255,255,0.75)", letterSpacing: "0.03em" }}>
+                  快速链接设置
+                </span>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-1 rounded-full transition-colors"
+                  style={{ color: "rgba(255,255,255,0.35)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.7)"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.35)"}
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
+
+              {/* Add new link form */}
+              <div className="space-y-2.5 mb-4">
+                <input
+                  type="text"
+                  value={newLinkLabel}
+                  onChange={(e) => setNewLinkLabel(e.target.value)}
+                  placeholder="标签名称"
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.9)",
+                    fontSize: "13px",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "rgba(255,140,50,0.5)";
+                    e.target.style.background = "rgba(255,255,255,0.09)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "rgba(255,255,255,0.08)";
+                    e.target.style.background = "rgba(255,255,255,0.06)";
+                  }}
+                />
+                <input
+                  type="text"
+                  value={newLinkUrl}
+                  onChange={(e) => setNewLinkUrl(e.target.value)}
+                  placeholder="URL地址 (https://...)"
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.9)",
+                    fontSize: "13px",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "rgba(255,140,50,0.5)";
+                    e.target.style.background = "rgba(255,255,255,0.09)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "rgba(255,255,255,0.08)";
+                    e.target.style.background = "rgba(255,255,255,0.06)";
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addQuickLink();
+                  }}
+                />
+                <button
+                  onClick={addQuickLink}
+                  disabled={!newLinkLabel.trim() || !newLinkUrl.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                  style={{
+                    background: newLinkLabel.trim() && newLinkUrl.trim()
+                      ? "linear-gradient(135deg, rgba(255,140,50,0.85) 0%, rgba(230,100,30,0.85) 100%)"
+                      : "rgba(255,255,255,0.04)",
+                    color: newLinkLabel.trim() && newLinkUrl.trim()
+                      ? "#ffffff"
+                      : "rgba(255,255,255,0.2)",
+                    opacity: newLinkLabel.trim() && newLinkUrl.trim() ? 1 : 0.5,
+                    cursor: newLinkLabel.trim() && newLinkUrl.trim() ? "pointer" : "not-allowed",
+                  }}
+                >
+                  <Plus size={14} strokeWidth={2.2} />
+                  添加链接
+                </button>
+              </div>
+
+              {/* Current links list */}
+              {quickLinks.length > 0 && (
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.1) transparent" }}>
+                  {quickLinks.map((link, index) => (
+                    <div
+                      key={`${link.label}-${index}`}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg group/link"
+                      style={{ background: "rgba(255,255,255,0.04)" }}
+                    >
+                      <div className="flex-1 min-w-0 mr-2">
+                        <div style={{ fontSize: "12px", fontWeight: 500, color: "rgba(255,255,255,0.85)", marginBottom: "2px" }}>
+                          {link.label}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {link.url}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeQuickLink(index)}
+                        className="p-1.5 rounded-md opacity-0 group-hover/link:opacity-100 transition-all duration-200"
+                        style={{
+                          color: "rgba(255,120,120,0.7)",
+                          background: "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,80,80,0.15)";
+                          e.currentTarget.style.color = "rgba(255,120,120,1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "rgba(255,120,120,0.7)";
+                        }}
+                      >
+                        <Trash2 size={12} strokeWidth={2} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {quickLinks.length === 0 && (
+                <div className="text-center py-6" style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)" }}>
+                  暂无快速链接，请添加
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      <div
-        className="absolute bottom-5 right-8"
-        style={{ zIndex: 3, color: "rgba(255,255,255,0.15)", fontSize: "11px", fontWeight: 300, letterSpacing: "0.05em" }}
-      >
-        Pexels
-      </div>
+
     </div>
   );
 }
