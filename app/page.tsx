@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -109,13 +110,17 @@ async function saveLinksToDB(links: QuickLink[]): Promise<void> {
 }
 
 interface AppSettings {
+  version: number;
   showSeconds: boolean;
   showClock: boolean;
   showDate: boolean;
   showBrandName: boolean;
 }
 
+const SETTINGS_VERSION = 1;
+
 const DEFAULT_APP_SETTINGS: AppSettings = {
+  version: SETTINGS_VERSION,
   showSeconds: false,
   showClock: true,
   showDate: true,
@@ -191,10 +196,21 @@ function extractDomain(url: string): string | null {
   }
 }
 
-function constructFaviconUrl(url: string): string | null {
+async function fetchFaviconWithCheck(url: string): Promise<{ url: string | null; failed: boolean }> {
   const domain = extractDomain(url);
-  if (!domain) return null;
-  return `https://${domain}/favicon.ico`;
+  if (!domain) return { url: null, failed: true };
+  const faviconUrl = `https://${domain}/favicon.ico`;
+  try {
+    const response = await fetch(faviconUrl, { method: "HEAD", mode: "no-cors" });
+    return { url: faviconUrl, failed: false };
+  } catch {
+    toast({
+      title: "图标获取失败",
+      description: `无法获取 ${domain} 的网站图标`,
+      duration: 3000,
+    });
+    return { url: null, failed: true };
+  }
 }
 
 export default function Home() {
@@ -270,10 +286,17 @@ export default function Home() {
     const loadSettings = async () => {
       const saved = await getAppSettingsFromDB();
       if (saved) {
-        setShowSeconds(saved.showSeconds);
-        setShowClock(saved.showClock);
-        setShowDate(saved.showDate);
-        setShowBrandName(saved.showBrandName);
+        if (saved.version === SETTINGS_VERSION) {
+          setShowSeconds(saved.showSeconds);
+          setShowClock(saved.showClock);
+          setShowDate(saved.showDate);
+          setShowBrandName(saved.showBrandName);
+        } else {
+          setShowSeconds(false);
+          setShowClock(saved.showClock ?? true);
+          setShowDate(saved.showDate ?? true);
+          setShowBrandName(saved.showBrandName ?? true);
+        }
       }
     };
     loadSettings();
@@ -281,6 +304,7 @@ export default function Home() {
 
   const saveAppSettings = useCallback(async () => {
     await saveAppSettingsToDB({
+      version: SETTINGS_VERSION,
       showSeconds,
       showClock,
       showDate,
@@ -298,7 +322,7 @@ export default function Home() {
     saveQuickLinks(newLinks);
   }, [quickLinks, saveQuickLinks]);
 
-  const addQuickLink = useCallback(() => {
+  const addQuickLink = useCallback(async () => {
     if (!newLinkLabel.trim() || !newLinkUrl.trim()) return;
     const newLink: QuickLink = {
       label: newLinkLabel.trim(),
@@ -306,7 +330,7 @@ export default function Home() {
       iconBase64: newLinkIcon || undefined,
     };
     if (!newLinkIcon && newLinkAutoFavicon) {
-      const faviconUrl = constructFaviconUrl(newLinkUrl.trim());
+      const { url: faviconUrl } = await fetchFaviconWithCheck(newLinkUrl.trim());
       if (faviconUrl) newLink.iconUrl = faviconUrl;
     }
     saveQuickLinks([...quickLinks, newLink]);
@@ -324,7 +348,7 @@ export default function Home() {
     setEditingIcon(link.iconBase64 || null);
   }, [quickLinks]);
 
-  const saveEdit = useCallback(() => {
+  const saveEdit = useCallback(async () => {
     if (editingIndex === null) return;
     const newLink: QuickLink = {
       label: editingLabel.trim(),
@@ -332,7 +356,7 @@ export default function Home() {
       iconBase64: editingIcon || undefined,
     };
     if (!editingIcon && editingAutoFavicon) {
-      const faviconUrl = constructFaviconUrl(editingUrl.trim());
+      const { url: faviconUrl } = await fetchFaviconWithCheck(editingUrl.trim());
       if (faviconUrl) newLink.iconUrl = faviconUrl;
     }
     const newLinks = [...quickLinks];
