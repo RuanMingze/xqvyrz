@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, X, ArrowRight, Settings, Plus, Trash2 } from "lucide-react";
+import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload } from "lucide-react";
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -45,13 +45,157 @@ function getDailyWallpaper(): string {
   return WALLPAPER_POOL[s % WALLPAPER_POOL.length];
 }
 
-const DEFAULT_QUICK_LINKS = [
+interface QuickLink {
+  label: string;
+  url: string;
+  iconBase64?: string;
+  iconUrl?: string;
+}
+
+const DEFAULT_QUICK_LINKS: QuickLink[] = [
   { label: "图片", url: "https://www.bing.com/images" },
   { label: "视频", url: "https://www.bing.com/videos" },
   { label: "地图", url: "https://www.bing.com/maps" },
   { label: "新闻", url: "https://www.bing.com/news" },
   { label: "翻译", url: "https://www.bing.com/translator" },
 ];
+
+const DB_NAME = "XqvyrzDB";
+const DB_VERSION = 1;
+const STORE_NAME = "quickLinks";
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+  });
+}
+
+async function getLinksFromDB(): Promise<QuickLink[] | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get("links");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function saveLinksToDB(links: QuickLink[]): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(links, "links");
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+interface AppSettings {
+  showSeconds: boolean;
+  showClock: boolean;
+  showDate: boolean;
+  showBrandName: boolean;
+}
+
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  showSeconds: false,
+  showClock: true,
+  showDate: true,
+  showBrandName: true,
+};
+
+async function getAppSettingsFromDB(): Promise<AppSettings | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get("appSettings");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function saveAppSettingsToDB(settings: AppSettings): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(settings, "appSettings");
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+function compressImage(file: File, maxWidth = 64, maxHeight = 64): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = width * ratio;
+          height = height * ratio;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/png", 0.8));
+        } else {
+          resolve(e.target?.result as string);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function extractDomain(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return null;
+  }
+}
+
+function constructFaviconUrl(url: string): string | null {
+  const domain = extractDomain(url);
+  if (!domain) return null;
+  return `https://${domain}/favicon.ico`;
+}
 
 export default function Home() {
   const wallpaper = useMemo(() => getDailyWallpaper(), []);
@@ -63,23 +207,41 @@ export default function Home() {
   const [isFocused, setIsFocused] = useState(false);
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
-  const [quickLinks, setQuickLinks] = useState<typeof DEFAULT_QUICK_LINKS>(DEFAULT_QUICK_LINKS);
+  const [quickLinks, setQuickLinks] = useState<QuickLink[]>(DEFAULT_QUICK_LINKS);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPosition, setSettingsPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [newLinkLabel, setNewLinkLabel] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
+  const [newLinkIcon, setNewLinkIcon] = useState<string | null>(null);
+  const [newLinkAutoFavicon, setNewLinkAutoFavicon] = useState(true);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+  const [editingUrl, setEditingUrl] = useState("");
+  const [editingIcon, setEditingIcon] = useState<string | null>(null);
+  const [editingAutoFavicon, setEditingAutoFavicon] = useState(true);
+  const [showAppSettings, setShowAppSettings] = useState(false);
+  const [showSeconds, setShowSeconds] = useState(true);
+  const [showClock, setShowClock] = useState(true);
+  const [showDate, setShowDate] = useState(true);
+  const [showBrandName, setShowBrandName] = useState(true);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const newIconInputRef = useRef<HTMLInputElement>(null);
+  const editIconInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const update = () => {
       const now = new Date();
       setTime(
-        now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+        now.toLocaleTimeString("zh-CN", { 
+          hour: "2-digit", 
+          minute: "2-digit",
+          second: showSeconds ? "2-digit" : undefined,
+        })
       );
       setDate(
         now.toLocaleDateString("zh-CN", {
@@ -92,22 +254,43 @@ export default function Home() {
     update();
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
+  }, [showSeconds]);
+
+  useEffect(() => {
+    const loadLinks = async () => {
+      const saved = await getLinksFromDB();
+      if (saved && Array.isArray(saved)) {
+        setQuickLinks(saved);
+      }
+    };
+    loadLinks();
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem("quickLinks");
-    if (saved) {
-      try {
-        setQuickLinks(JSON.parse(saved));
-      } catch {
-        // 忽略无效数据
+    const loadSettings = async () => {
+      const saved = await getAppSettingsFromDB();
+      if (saved) {
+        setShowSeconds(saved.showSeconds);
+        setShowClock(saved.showClock);
+        setShowDate(saved.showDate);
+        setShowBrandName(saved.showBrandName);
       }
-    }
+    };
+    loadSettings();
   }, []);
 
-  const saveQuickLinks = useCallback((links: typeof DEFAULT_QUICK_LINKS) => {
+  const saveAppSettings = useCallback(async () => {
+    await saveAppSettingsToDB({
+      showSeconds,
+      showClock,
+      showDate,
+      showBrandName,
+    });
+  }, [showSeconds, showClock, showDate, showBrandName]);
+
+  const saveQuickLinks = useCallback(async (links: QuickLink[]) => {
     setQuickLinks(links);
-    localStorage.setItem("quickLinks", JSON.stringify(links));
+    await saveLinksToDB(links);
   }, []);
 
   const removeQuickLink = useCallback((index: number) => {
@@ -117,11 +300,85 @@ export default function Home() {
 
   const addQuickLink = useCallback(() => {
     if (!newLinkLabel.trim() || !newLinkUrl.trim()) return;
-    const newLink = { label: newLinkLabel.trim(), url: newLinkUrl.trim() };
+    const newLink: QuickLink = {
+      label: newLinkLabel.trim(),
+      url: newLinkUrl.trim(),
+      iconBase64: newLinkIcon || undefined,
+    };
+    if (!newLinkIcon && newLinkAutoFavicon) {
+      const faviconUrl = constructFaviconUrl(newLinkUrl.trim());
+      if (faviconUrl) newLink.iconUrl = faviconUrl;
+    }
     saveQuickLinks([...quickLinks, newLink]);
     setNewLinkLabel("");
     setNewLinkUrl("");
-  }, [newLinkLabel, newLinkUrl, quickLinks, saveQuickLinks]);
+    setNewLinkIcon(null);
+    setNewLinkAutoFavicon(true);
+  }, [newLinkLabel, newLinkUrl, newLinkIcon, newLinkAutoFavicon, quickLinks, saveQuickLinks]);
+
+  const startEdit = useCallback((index: number) => {
+    const link = quickLinks[index];
+    setEditingIndex(index);
+    setEditingLabel(link.label);
+    setEditingUrl(link.url);
+    setEditingIcon(link.iconBase64 || null);
+  }, [quickLinks]);
+
+  const saveEdit = useCallback(() => {
+    if (editingIndex === null) return;
+    const newLink: QuickLink = {
+      label: editingLabel.trim(),
+      url: editingUrl.trim(),
+      iconBase64: editingIcon || undefined,
+    };
+    if (!editingIcon && editingAutoFavicon) {
+      const faviconUrl = constructFaviconUrl(editingUrl.trim());
+      if (faviconUrl) newLink.iconUrl = faviconUrl;
+    }
+    const newLinks = [...quickLinks];
+    newLinks[editingIndex] = newLink;
+    saveQuickLinks(newLinks);
+    setEditingIndex(null);
+    setEditingLabel("");
+    setEditingUrl("");
+    setEditingIcon(null);
+    setEditingAutoFavicon(true);
+  }, [editingIndex, editingLabel, editingUrl, editingIcon, editingAutoFavicon, quickLinks, saveQuickLinks]);
+
+  const cancelEdit = useCallback(() => {
+    setEditingIndex(null);
+    setEditingLabel("");
+    setEditingUrl("");
+    setEditingIcon(null);
+  }, []);
+
+  const handleNewIconUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base64 = await compressImage(file);
+    setNewLinkIcon(base64);
+  }, []);
+
+  const handleEditIconUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base64 = await compressImage(file);
+    setEditingIcon(base64);
+  }, []);
+
+  const clearNewIcon = useCallback(() => {
+    setNewLinkIcon(null);
+    if (newIconInputRef.current) {
+      newIconInputRef.current.value = "";
+    }
+  }, []);
+
+  const clearEditIcon = useCallback(() => {
+    setEditingIcon(null);
+    if (editIconInputRef.current) {
+      editIconInputRef.current.value = "";
+    }
+  }, []);
 
   const fetchSuggestions = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -206,6 +463,12 @@ export default function Home() {
     setShowContextMenu(false);
   }, [contextPosition]);
 
+  const openAppSettings = useCallback(() => {
+    setSettingsPosition(contextPosition);
+    setShowAppSettings(true);
+    setShowContextMenu(false);
+  }, [contextPosition]);
+
   useEffect(() => {
     if (!showContextMenu) return;
     const handler = () => setShowContextMenu(false);
@@ -229,6 +492,18 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showSettings]);
 
+  useEffect(() => {
+    if (!showAppSettings) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-app-settings-panel]")) {
+        setShowAppSettings(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showAppSettings]);
+
   const isActive = isFocused || query.length > 0;
 
   return (
@@ -246,48 +521,50 @@ export default function Home() {
       />
 
       <div className="relative flex flex-col items-center gap-14 w-full px-4" style={{ zIndex: 3 }}>
-        {/* Brand */}
-        <div
-          className="font-medium tracking-[0.35em] uppercase"
-          style={{
-            fontSize: "clamp(1rem, 2vw, 1.4rem)",
-            color: "rgba(255,255,255,0.7)",
-            letterSpacing: "0.35em",
-            textShadow: "0 2px 20px rgba(0,0,0,0.3)",
-          }}
-        >
-          Xqvyrz
-        </div>
-
-        {/* Clock */}
-        <div className="flex flex-col items-center gap-3 text-white">
+        {showBrandName && (
           <div
-            className="font-extralight tabular-nums"
+            className="font-medium tracking-[0.35em] uppercase"
             style={{
-              fontSize: "clamp(4.5rem, 12vw, 9rem)",
-              lineHeight: 1,
-              letterSpacing: "-0.02em",
-              textShadow: "0 1px 30px rgba(0,0,0,0.2)",
+              fontSize: "clamp(1rem, 2vw, 1.4rem)",
+              color: "rgba(255,255,255,0.7)",
+              letterSpacing: "0.35em",
+              textShadow: "0 2px 20px rgba(0,0,0,0.3)",
             }}
           >
-            {time}
+            Xqvyrz
           </div>
-          <div
-            className="font-light"
-            style={{
-              fontSize: "clamp(0.8rem, 1.2vw, 1rem)",
-              color: "rgba(255,255,255,0.5)",
-              letterSpacing: "0.15em",
-            }}
-          >
-            {date}
-          </div>
-        </div>
+        )}
 
-        {/* Search area */}
+        {showClock && (
+          <div className="flex flex-col items-center gap-3 text-white">
+            <div
+              className="font-extralight tabular-nums"
+              style={{
+                fontSize: "clamp(4.5rem, 12vw, 9rem)",
+                lineHeight: 1,
+                letterSpacing: "-0.02em",
+                textShadow: "0 1px 30px rgba(0,0,0,0.2)",
+              }}
+            >
+              {time}
+            </div>
+            {showDate && (
+              <div
+                className="font-light"
+                style={{
+                  fontSize: "clamp(0.8rem, 1.2vw, 1rem)",
+                  color: "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.15em",
+                }}
+              >
+                {date}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="w-full max-w-[600px]">
           <div className="relative" style={{ transform: "translateZ(0)" }}>
-            {/* Search bar - Glassmorphism 2.0 */}
             <div
               className="flex items-center transition-all duration-300 ease-out"
               style={{
@@ -390,7 +667,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Suggestions - Glassmorphism */}
             {showSuggestions && suggestions.length > 0 && (
               <div
                 ref={suggestionRef}
@@ -456,7 +732,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Quick links - Chip Style */}
           <div className="flex items-center justify-center gap-2.5 mt-7 flex-wrap">
             {quickLinks.map((link, index) => (
               <a
@@ -464,7 +739,7 @@ export default function Home() {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center px-[18px] py-[9px] rounded-full transition-all duration-250 ease-out group relative"
+                className="inline-flex items-center gap-2 px-[18px] py-[9px] rounded-full transition-all duration-250 ease-out group relative"
                 style={{
                   fontSize: "12.5px",
                   fontWeight: 400,
@@ -493,12 +768,26 @@ export default function Home() {
                   el.style.transform = "translateY(0)";
                 }}
               >
+                {link.iconBase64 && (
+                  <img
+                    src={link.iconBase64}
+                    alt=""
+                    className="w-[14px] h-[14px] rounded-sm opacity-70 group-hover:opacity-100 transition-opacity"
+                  />
+                )}
+                {!link.iconBase64 && link.iconUrl && (
+                  <img
+                    src={link.iconUrl}
+                    alt=""
+                    className="w-[14px] h-[14px] rounded-sm opacity-70 group-hover:opacity-100 transition-opacity"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
                 {link.label}
               </a>
             ))}
           </div>
 
-          {/* Context menu - 右键菜单 */}
           {showContextMenu && (
             <div
               className="fixed w-[180px] rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
@@ -506,11 +795,11 @@ export default function Home() {
                 zIndex: 100,
                 left: Math.min(contextPosition.x, window.innerWidth - 200),
                 top: Math.min(contextPosition.y, window.innerHeight - 100),
-                background: "rgba(30,30,35,0.96)",
+                background: "linear-gradient(135deg, rgba(30,30,35,0.92) 0%, rgba(20,20,25,0.95) 100%)",
                 backdropFilter: "blur(20px) saturate(180%)",
                 WebkitBackdropFilter: "blur(20px) saturate(180%)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                border: "1.5px solid rgba(255,255,255,0.15)",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)",
               }}
               onClick={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.stopPropagation()}
@@ -520,57 +809,197 @@ export default function Home() {
                 className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors"
                 style={{
                   fontSize: "13px",
-                  color: "rgba(255,255,255,0.8)",
+                  color: "rgba(255,255,255,0.85)",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255,140,50,0.15)";
+                  e.currentTarget.style.background = "rgba(255,140,50,0.18)";
                   e.currentTarget.style.color = "#ffffff";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = "rgba(255,255,255,0.8)";
+                  e.currentTarget.style.color = "rgba(255,255,255,0.85)";
                 }}
               >
                 <Settings size={14} strokeWidth={1.8} />
                 快速链接设置
               </button>
+              <div className="h-px mx-3.5 bg-gradient-to-r from-transparent via-rgba(255,255,255,0.12) to-transparent" />
+              <button
+                onClick={openAppSettings}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors"
+                style={{
+                  fontSize: "13px",
+                  color: "rgba(255,255,255,0.85)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,140,50,0.18)";
+                  e.currentTarget.style.color = "#ffffff";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "rgba(255,255,255,0.85)";
+                }}
+              >
+                <Settings size={14} strokeWidth={1.8} />
+                应用设置
+              </button>
             </div>
           )}
 
-          {/* Settings panel - 设置面板 */}
-          {showSettings && (
+          {showAppSettings && (
             <div
-              data-settings-panel
-              className="fixed w-[320px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
+              data-app-settings-panel
+              className="fixed w-[300px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
               style={{
                 zIndex: 100,
-                left: Math.min(settingsPosition.x, window.innerWidth - 340),
-                top: Math.min(settingsPosition.y, window.innerHeight - 400),
-                background: "linear-gradient(135deg, rgba(30,30,35,0.97) 0%, rgba(20,20,25,0.99) 100%)",
+                left: Math.min(settingsPosition.x, window.innerWidth - 320),
+                top: Math.min(settingsPosition.y, window.innerHeight - 350),
+                background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3)",
+                border: "1.5px solid rgba(255,255,255,0.15)",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)",
               }}
               onClick={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "rgba(255,255,255,0.75)", letterSpacing: "0.03em" }}>
-                  快速链接设置
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em" }}>
+                  应用设置
                 </span>
                 <button
-                  onClick={() => setShowSettings(false)}
+                  onClick={() => setShowAppSettings(false)}
                   className="p-1 rounded-full transition-colors"
-                  style={{ color: "rgba(255,255,255,0.35)" }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.7)"}
-                  onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.35)"}
+                  style={{ color: "rgba(255,255,255,0.4)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.4)"}
                 >
                   <X size={14} strokeWidth={2} />
                 </button>
               </div>
 
-              {/* Add new link form */}
+              <div className="space-y-3">
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示时钟</span>
+                  <button
+                    onClick={() => { setShowClock(!showClock); saveAppSettings(); }}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showClock ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showClock ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示秒数</span>
+                  <button
+                    onClick={() => { setShowSeconds(!showSeconds); saveAppSettings(); }}
+                    disabled={!showClock}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showClock && showSeconds ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                      opacity: showClock ? 1 : 0.4,
+                      cursor: showClock ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showClock && showSeconds ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示日期</span>
+                  <button
+                    onClick={() => { setShowDate(!showDate); saveAppSettings(); }}
+                    disabled={!showClock}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showClock && showDate ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                      opacity: showClock ? 1 : 0.4,
+                      cursor: showClock ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showClock && showDate ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示产品名称</span>
+                  <button
+                    onClick={() => { setShowBrandName(!showBrandName); saveAppSettings(); }}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showBrandName ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showBrandName ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {showSettings && (
+            <div
+              data-settings-panel
+              className="fixed w-[360px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
+              style={{
+                zIndex: 100,
+                left: Math.min(settingsPosition.x, window.innerWidth - 380),
+                top: Math.min(settingsPosition.y, window.innerHeight - 500),
+                background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
+                backdropFilter: "blur(24px) saturate(180%)",
+                WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                border: "1.5px solid rgba(255,255,255,0.15)",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em" }}>
+                  快速链接设置
+                </span>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-1 rounded-full transition-colors"
+                  style={{ color: "rgba(255,255,255,0.4)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.4)"}
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
+
               <div className="space-y-2.5 mb-4">
                 <input
                   type="text"
@@ -581,7 +1010,7 @@ export default function Home() {
                   style={{
                     background: "rgba(255,255,255,0.06)",
                     border: "1px solid rgba(255,255,255,0.08)",
-                    color: "rgba(255,255,255,0.9)",
+                    color: "rgba(255,255,255,0.95)",
                     fontSize: "13px",
                   }}
                   onFocus={(e) => {
@@ -602,7 +1031,7 @@ export default function Home() {
                   style={{
                     background: "rgba(255,255,255,0.06)",
                     border: "1px solid rgba(255,255,255,0.08)",
-                    color: "rgba(255,255,255,0.9)",
+                    color: "rgba(255,255,255,0.95)",
                     fontSize: "13px",
                   }}
                   onFocus={(e) => {
@@ -617,6 +1046,73 @@ export default function Home() {
                     if (e.key === "Enter") addQuickLink();
                   }}
                 />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => newIconInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-all"
+                    style={{
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      color: "rgba(255,255,255,0.6)",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.09)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                    }}
+                  >
+                    <Upload size={14} strokeWidth={2} />
+                    {newLinkIcon ? "更换图标" : "上传图标"}
+                  </button>
+                  <input
+                    ref={newIconInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleNewIconUpload}
+                  />
+                  {newLinkIcon && (
+                    <button
+                      onClick={clearNewIcon}
+                      className="p-2 rounded-lg transition-all"
+                      style={{
+                        background: "rgba(255,120,120,0.12)",
+                        color: "rgba(255,120,120,0.8)",
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,120,120,0.2)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,120,120,0.12)"}
+                    >
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
+                </div>
+                {newLinkIcon && (
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={newLinkIcon}
+                      alt="预览"
+                      className="w-[24px] h-[24px] rounded-sm"
+                    />
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>图标预览</span>
+                  </div>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={newLinkAutoFavicon}
+                    onChange={(e) => setNewLinkAutoFavicon(e.target.checked)}
+                    className="accent-orange-500"
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      accentColor: "rgba(255,140,50,0.8)",
+                    }}
+                  />
+                  <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)" }}>自动获取网站图标</span>
+                </label>
                 <button
                   onClick={addQuickLink}
                   disabled={!newLinkLabel.trim() || !newLinkUrl.trim()}
@@ -630,6 +1126,7 @@ export default function Home() {
                       : "rgba(255,255,255,0.2)",
                     opacity: newLinkLabel.trim() && newLinkUrl.trim() ? 1 : 0.5,
                     cursor: newLinkLabel.trim() && newLinkUrl.trim() ? "pointer" : "not-allowed",
+                    boxShadow: newLinkLabel.trim() && newLinkUrl.trim() ? "0 2px 12px rgba(255,120,40,0.35), inset 0 1px 0 rgba(255,255,255,0.2)" : "none",
                   }}
                 >
                   <Plus size={14} strokeWidth={2.2} />
@@ -637,43 +1134,174 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Current links list */}
               {quickLinks.length > 0 && (
-                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.1) transparent" }}>
-                  {quickLinks.map((link, index) => (
-                    <div
-                      key={`${link.label}-${index}`}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg group/link"
-                      style={{ background: "rgba(255,255,255,0.04)" }}
-                    >
-                      <div className="flex-1 min-w-0 mr-2">
-                        <div style={{ fontSize: "12px", fontWeight: 500, color: "rgba(255,255,255,0.85)", marginBottom: "2px" }}>
-                          {link.label}
-                        </div>
-                        <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {link.url}
+                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.15) transparent" }}>
+                  {quickLinks.map((link, index) => {
+                    const isEditing = editingIndex === index;
+                    return (
+                      <div
+                        key={`${link.label}-${index}`}
+                        className="flex items-center justify-between px-3 py-2 rounded-lg"
+                        style={{
+                          background: isEditing ? "rgba(255,140,50,0.12)" : "rgba(255,255,255,0.04)",
+                          border: isEditing ? "1px solid rgba(255,140,50,0.3)" : "1px solid transparent",
+                        }}
+                        onClick={() => !isEditing && startEdit(index)}
+                      >
+                        {isEditing ? (
+                          <div className="flex-1 min-w-0 mr-2 space-y-1">
+                            <input
+                              type="text"
+                              value={editingLabel}
+                              onChange={(e) => setEditingLabel(e.target.value)}
+                              className="w-full px-2 py-1 rounded text-xs outline-none"
+                              style={{
+                                background: "rgba(255,255,255,0.08)",
+                                border: "1px solid rgba(255,140,50,0.3)",
+                                color: "#ffffff",
+                                fontSize: "12px",
+                              }}
+                              autoFocus
+                            />
+                            <input
+                              type="text"
+                              value={editingUrl}
+                              onChange={(e) => setEditingUrl(e.target.value)}
+                              className="w-full px-2 py-1 rounded text-xs outline-none"
+                              style={{
+                                background: "rgba(255,255,255,0.08)",
+                                border: "1px solid rgba(255,140,50,0.3)",
+                                color: "#ffffff",
+                                fontSize: "11px",
+                              }}
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); editIconInputRef.current?.click(); }}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs transition-all"
+                                style={{
+                                  background: "rgba(255,255,255,0.06)",
+                                  border: "1px solid rgba(255,255,255,0.08)",
+                                  color: "rgba(255,255,255,0.5)",
+                                }}
+                              >
+                                <Upload size={12} strokeWidth={2} />
+                                {editingIcon ? "更换" : "上传图标"}
+                              </button>
+                              <input
+                                ref={editIconInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleEditIconUpload}
+                              />
+                              {editingIcon && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); clearEditIcon(); }}
+                                  className="p-1.5 rounded transition-all"
+                                  style={{
+                                    background: "rgba(255,120,120,0.12)",
+                                    color: "rgba(255,120,120,0.8)",
+                                  }}
+                                >
+                                  <X size={11} strokeWidth={2} />
+                                </button>
+                              )}
+                            </div>
+                            {editingIcon && (
+                              <img
+                                src={editingIcon}
+                                alt="预览"
+                                className="w-[20px] h-[20px] rounded-sm"
+                              />
+                            )}
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none mt-1" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={editingAutoFavicon}
+                                onChange={(e) => setEditingAutoFavicon(e.target.checked)}
+                                className="accent-orange-500"
+                                style={{
+                                  width: "13px",
+                                  height: "13px",
+                                  accentColor: "rgba(255,140,50,0.8)",
+                                }}
+                              />
+                              <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.45)" }}>自动获取图标</span>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-w-0 mr-2">
+                            <div style={{ fontSize: "12px", fontWeight: 500, color: "rgba(255,255,255,0.9)", marginBottom: "2px" }}>
+                              {link.iconBase64 && <img src={link.iconBase64} alt="" className="w-[12px] h-[12px] inline-block mr-1.5 rounded-sm" />}
+                              {!link.iconBase64 && link.iconUrl && <img src={link.iconUrl} alt="" className="w-[12px] h-[12px] inline-block mr-1.5 rounded-sm" />}
+                              {link.label}
+                            </div>
+                            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {link.url}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); saveEdit(); }}
+                                className="p-1.5 rounded-md transition-all"
+                                style={{
+                                  color: "rgba(100,200,100,0.8)",
+                                  background: "rgba(100,200,100,0.12)",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "rgba(100,200,100,0.2)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "rgba(100,200,100,0.12)";
+                                }}
+                              >
+                                <Check size={12} strokeWidth={2} />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); cancelEdit(); }}
+                                className="p-1.5 rounded-md transition-all"
+                                style={{
+                                  color: "rgba(255,120,120,0.8)",
+                                  background: "rgba(255,120,120,0.12)",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "rgba(255,120,120,0.2)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "rgba(255,120,120,0.12)";
+                                }}
+                              >
+                                <X size={12} strokeWidth={2} />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeQuickLink(index); }}
+                              className="p-1.5 rounded-md opacity-0 transition-all duration-200 hover:opacity-100"
+                              style={{
+                                color: "rgba(255,120,120,0.7)",
+                                background: "transparent",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(255,80,80,0.18)";
+                                e.currentTarget.style.color = "rgba(255,120,120,1)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "transparent";
+                                e.currentTarget.style.color = "rgba(255,120,120,0.7)";
+                              }}
+                            >
+                              <Trash2 size={12} strokeWidth={2} />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <button
-                        onClick={() => removeQuickLink(index)}
-                        className="p-1.5 rounded-md opacity-0 group-hover/link:opacity-100 transition-all duration-200"
-                        style={{
-                          color: "rgba(255,120,120,0.7)",
-                          background: "transparent",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "rgba(255,80,80,0.15)";
-                          e.currentTarget.style.color = "rgba(255,120,120,1)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "transparent";
-                          e.currentTarget.style.color = "rgba(255,120,120,0.7)";
-                        }}
-                      >
-                        <Trash2 size={12} strokeWidth={2} />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -686,7 +1314,6 @@ export default function Home() {
           )}
         </div>
       </div>
-
 
     </div>
   );
