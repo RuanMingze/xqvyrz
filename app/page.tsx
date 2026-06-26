@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+console.log("[Toast] toast function loaded:", typeof toast);
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -66,12 +67,20 @@ const DB_VERSION = 1;
 const STORE_NAME = "quickLinks";
 
 function openDB(): Promise<IDBDatabase> {
+  console.log("[DB] openDB called:", DB_NAME, DB_VERSION);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+    request.onerror = (e) => {
+      console.error("[DB] openDB error:", request.error);
+      reject(request.error);
+    };
+    request.onsuccess = () => {
+      console.log("[DB] openDB success:", request.result.name);
+      resolve(request.result);
+    };
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
+      console.log("[DB] openDB upgrade needed, creating store:", STORE_NAME);
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
@@ -81,31 +90,46 @@ function openDB(): Promise<IDBDatabase> {
 
 async function getLinksFromDB(): Promise<QuickLink[] | null> {
   try {
+    console.log("[DB] getLinksFromDB called");
     const db = await openDB();
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get("links");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        console.log("[DB] getLinksFromDB success:", request.result);
+        resolve(request.result);
+      };
+      request.onerror = (e) => {
+        console.error("[DB] getLinksFromDB error:", e);
+        resolve(null);
+      };
     });
-  } catch {
+  } catch (e) {
+    console.error("[DB] getLinksFromDB exception:", e);
     return null;
   }
 }
 
 async function saveLinksToDB(links: QuickLink[]): Promise<void> {
   try {
+    console.log("[DB] saveLinksToDB called, links count:", links.length);
     const db = await openDB();
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(links, "links");
-      request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
+      request.onsuccess = () => {
+        console.log("[DB] saveLinksToDB success");
+        resolve();
+      };
+      request.onerror = (e) => {
+        console.error("[DB] saveLinksToDB error:", e);
+        resolve();
+      };
     });
-  } catch {
-    // ignore
+  } catch (e) {
+    console.error("[DB] saveLinksToDB exception:", e);
   }
 }
 
@@ -129,31 +153,48 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 
 async function getAppSettingsFromDB(): Promise<AppSettings | null> {
   try {
+    console.log("[DB] Opening database for getAppSettings...");
     const db = await openDB();
+    console.log("[DB] Database opened successfully:", db.name);
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get("appSettings");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        console.log("[DB] getAppSettings success:", request.result);
+        resolve(request.result);
+      };
+      request.onerror = (e) => {
+        console.error("[DB] getAppSettings error:", e);
+        resolve(null);
+      };
     });
-  } catch {
+  } catch (e) {
+    console.error("[DB] getAppSettings exception:", e);
     return null;
   }
 }
 
 async function saveAppSettingsToDB(settings: AppSettings): Promise<void> {
   try {
+    console.log("[DB] Opening database for saveAppSettings...", settings);
     const db = await openDB();
+    console.log("[DB] Database opened successfully:", db.name);
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(settings, "appSettings");
-      request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
+      request.onsuccess = () => {
+        console.log("[DB] saveAppSettings success");
+        resolve();
+      };
+      request.onerror = (e) => {
+        console.error("[DB] saveAppSettings error:", e);
+        resolve();
+      };
     });
-  } catch {
-    // ignore
+  } catch (e) {
+    console.error("[DB] saveAppSettings exception:", e);
   }
 }
 
@@ -189,7 +230,8 @@ function compressImage(file: File, maxWidth = 64, maxHeight = 64): Promise<strin
 
 function extractDomain(url: string): string | null {
   try {
-    const urlObj = new URL(url);
+    const normalizedUrl = url.startsWith("http") ? url : `https://${url}`;
+    const urlObj = new URL(normalizedUrl);
     return urlObj.hostname;
   } catch {
     return null;
@@ -197,13 +239,20 @@ function extractDomain(url: string): string | null {
 }
 
 async function fetchFaviconWithCheck(url: string): Promise<{ url: string | null; failed: boolean }> {
+  console.log("[Favicon] fetchFaviconWithCheck called for:", url);
   const domain = extractDomain(url);
-  if (!domain) return { url: null, failed: true };
+  if (!domain) {
+    console.log("[Favicon] extractDomain failed");
+    return { url: null, failed: true };
+  }
   const faviconUrl = `https://${domain}/favicon.ico`;
+  console.log("[Favicon] fetching:", faviconUrl);
   try {
     const response = await fetch(faviconUrl, { method: "HEAD", mode: "no-cors" });
+    console.log("[Favicon] fetch success, response:", response);
     return { url: faviconUrl, failed: false };
-  } catch {
+  } catch (e) {
+    console.error("[Favicon] fetch failed, showing toast:", e);
     toast({
       title: "图标获取失败",
       description: `无法获取 ${domain} 的网站图标`,
@@ -284,25 +333,32 @@ export default function Home() {
 
   useEffect(() => {
     const loadSettings = async () => {
+      console.log("[Settings] loadSettings called");
       const saved = await getAppSettingsFromDB();
+      console.log("[Settings] loadSettings got:", saved);
       if (saved) {
         if (saved.version === SETTINGS_VERSION) {
+          console.log("[Settings] using saved settings with matching version");
           setShowSeconds(saved.showSeconds);
           setShowClock(saved.showClock);
           setShowDate(saved.showDate);
           setShowBrandName(saved.showBrandName);
         } else {
+          console.log("[Settings] version mismatch, applying migration (showSeconds=false)");
           setShowSeconds(false);
           setShowClock(saved.showClock ?? true);
           setShowDate(saved.showDate ?? true);
           setShowBrandName(saved.showBrandName ?? true);
         }
+      } else {
+        console.log("[Settings] no saved settings found, using defaults");
       }
     };
     loadSettings();
   }, []);
 
   const saveAppSettings = useCallback(async () => {
+    console.log("[Settings] saveAppSettings called:", { showSeconds, showClock, showDate, showBrandName });
     await saveAppSettingsToDB({
       version: SETTINGS_VERSION,
       showSeconds,
@@ -311,6 +367,11 @@ export default function Home() {
       showBrandName,
     });
   }, [showSeconds, showClock, showDate, showBrandName]);
+
+  useEffect(() => {
+    console.log("[Settings] useEffect triggered, auto-saving:", { showSeconds, showClock, showDate, showBrandName });
+    saveAppSettings();
+  }, [saveAppSettings]);
 
   const saveQuickLinks = useCallback(async (links: QuickLink[]) => {
     setQuickLinks(links);
@@ -817,8 +878,8 @@ export default function Home() {
               className="fixed w-[180px] rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
               style={{
                 zIndex: 100,
-                left: Math.min(contextPosition.x, window.innerWidth - 200),
-                top: Math.min(contextPosition.y, window.innerHeight - 100),
+                left: Math.max(0, Math.min(contextPosition.x, window.innerWidth - 200)),
+                top: Math.max(0, Math.min(contextPosition.y, window.innerHeight - 100)),
                 background: "linear-gradient(135deg, rgba(30,30,35,0.92) 0%, rgba(20,20,25,0.95) 100%)",
                 backdropFilter: "blur(20px) saturate(180%)",
                 WebkitBackdropFilter: "blur(20px) saturate(180%)",
@@ -876,8 +937,8 @@ export default function Home() {
               className="fixed w-[300px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
               style={{
                 zIndex: 100,
-                left: Math.min(settingsPosition.x, window.innerWidth - 320),
-                top: Math.min(settingsPosition.y, window.innerHeight - 350),
+                left: Math.max(0, Math.min(settingsPosition.x, window.innerWidth - 320)),
+                top: Math.max(0, Math.min(settingsPosition.y, window.innerHeight - 350)),
                 background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
@@ -906,7 +967,7 @@ export default function Home() {
                 <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示时钟</span>
                   <button
-                    onClick={() => { setShowClock(!showClock); saveAppSettings(); }}
+                    onClick={() => setShowClock(!showClock)}
                     className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
                     style={{
                       background: showClock ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
@@ -926,7 +987,7 @@ export default function Home() {
                 <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示秒数</span>
                   <button
-                    onClick={() => { setShowSeconds(!showSeconds); saveAppSettings(); }}
+                    onClick={() => setShowSeconds(!showSeconds)}
                     disabled={!showClock}
                     className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
                     style={{
@@ -949,7 +1010,7 @@ export default function Home() {
                 <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示日期</span>
                   <button
-                    onClick={() => { setShowDate(!showDate); saveAppSettings(); }}
+                    onClick={() => setShowDate(!showDate)}
                     disabled={!showClock}
                     className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
                     style={{
@@ -972,7 +1033,7 @@ export default function Home() {
                 <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示产品名称</span>
                   <button
-                    onClick={() => { setShowBrandName(!showBrandName); saveAppSettings(); }}
+                    onClick={() => setShowBrandName(!showBrandName)}
                     className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
                     style={{
                       background: showBrandName ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
@@ -998,8 +1059,8 @@ export default function Home() {
               className="fixed w-[360px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
               style={{
                 zIndex: 100,
-                left: Math.min(settingsPosition.x, window.innerWidth - 380),
-                top: Math.min(settingsPosition.y, window.innerHeight - 500),
+                left: Math.max(0, Math.min(settingsPosition.x, window.innerWidth - 380)),
+                top: Math.max(20, Math.min(settingsPosition.y, window.innerHeight - 550)),
                 background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
