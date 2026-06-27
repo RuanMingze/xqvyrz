@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload } from "lucide-react";
+import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload, Clock } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-console.log("[Toast] toast function loaded:", typeof toast);
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -67,7 +66,6 @@ const DB_VERSION = 1;
 const STORE_NAME = "quickLinks";
 
 function openDB(): Promise<IDBDatabase> {
-  console.log("[DB] openDB called:", DB_NAME, DB_VERSION);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = (e) => {
@@ -75,12 +73,10 @@ function openDB(): Promise<IDBDatabase> {
       reject(request.error);
     };
     request.onsuccess = () => {
-      console.log("[DB] openDB success:", request.result.name);
       resolve(request.result);
     };
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      console.log("[DB] openDB upgrade needed, creating store:", STORE_NAME);
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
@@ -90,14 +86,12 @@ function openDB(): Promise<IDBDatabase> {
 
 async function getLinksFromDB(): Promise<QuickLink[] | null> {
   try {
-    console.log("[DB] getLinksFromDB called");
     const db = await openDB();
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get("links");
       request.onsuccess = () => {
-        console.log("[DB] getLinksFromDB success:", request.result);
         resolve(request.result);
       };
       request.onerror = (e) => {
@@ -113,14 +107,12 @@ async function getLinksFromDB(): Promise<QuickLink[] | null> {
 
 async function saveLinksToDB(links: QuickLink[]): Promise<void> {
   try {
-    console.log("[DB] saveLinksToDB called, links count:", links.length);
     const db = await openDB();
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(links, "links");
       request.onsuccess = () => {
-        console.log("[DB] saveLinksToDB success");
         resolve();
       };
       request.onerror = (e) => {
@@ -139,6 +131,9 @@ interface AppSettings {
   showClock: boolean;
   showDate: boolean;
   showBrandName: boolean;
+  showSearchHistory: boolean;
+  showSearchSuggestions: boolean;
+  searchHistoryLimit: number;
 }
 
 const SETTINGS_VERSION = 1;
@@ -149,19 +144,19 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   showClock: true,
   showDate: true,
   showBrandName: true,
+  showSearchHistory: true,
+  showSearchSuggestions: true,
+  searchHistoryLimit: 3,
 };
 
 async function getAppSettingsFromDB(): Promise<AppSettings | null> {
   try {
-    console.log("[DB] Opening database for getAppSettings...");
     const db = await openDB();
-    console.log("[DB] Database opened successfully:", db.name);
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get("appSettings");
       request.onsuccess = () => {
-        console.log("[DB] getAppSettings success:", request.result);
         resolve(request.result);
       };
       request.onerror = (e) => {
@@ -177,15 +172,12 @@ async function getAppSettingsFromDB(): Promise<AppSettings | null> {
 
 async function saveAppSettingsToDB(settings: AppSettings): Promise<void> {
   try {
-    console.log("[DB] Opening database for saveAppSettings...", settings);
     const db = await openDB();
-    console.log("[DB] Database opened successfully:", db.name);
     return new Promise((resolve) => {
       const transaction = db.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(settings, "appSettings");
       request.onsuccess = () => {
-        console.log("[DB] saveAppSettings success");
         resolve();
       };
       request.onerror = (e) => {
@@ -196,6 +188,55 @@ async function saveAppSettingsToDB(settings: AppSettings): Promise<void> {
   } catch (e) {
     console.error("[DB] saveAppSettings exception:", e);
   }
+}
+
+async function getSearchHistoryFromDB(): Promise<string[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get("searchHistory");
+      request.onsuccess = () => {
+        resolve(request.result || []);
+      };
+      request.onerror = (e) => {
+        console.error("[DB] getSearchHistoryFromDB error:", e);
+        resolve([]);
+      };
+    });
+  } catch (e) {
+    console.error("[DB] getSearchHistoryFromDB exception:", e);
+    return [];
+  }
+}
+
+async function saveSearchHistoryToDB(history: string[]): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(history, "searchHistory");
+      request.onsuccess = () => {
+        resolve();
+      };
+      request.onerror = (e) => {
+        console.error("[DB] saveSearchHistoryToDB error:", e);
+        resolve();
+      };
+    });
+  } catch (e) {
+    console.error("[DB] saveSearchHistoryToDB exception:", e);
+  }
+}
+
+async function addToSearchHistory(query: string): Promise<void> {
+  if (!query.trim()) return;
+  const history = await getSearchHistoryFromDB();
+  const filtered = history.filter(h => h !== query);
+  const newHistory = [query, ...filtered].slice(0, 10);
+  await saveSearchHistoryToDB(newHistory);
 }
 
 function compressImage(file: File, maxWidth = 64, maxHeight = 64): Promise<string> {
@@ -239,17 +280,13 @@ function extractDomain(url: string): string | null {
 }
 
 async function fetchFaviconWithCheck(url: string): Promise<{ url: string | null; failed: boolean }> {
-  console.log("[Favicon] fetchFaviconWithCheck called for:", url);
   const domain = extractDomain(url);
   if (!domain) {
-    console.log("[Favicon] extractDomain failed");
     return { url: null, failed: true };
   }
   const faviconUrl = `https://${domain}/favicon.ico`;
-  console.log("[Favicon] fetching:", faviconUrl);
   try {
     const response = await fetch(faviconUrl, { method: "HEAD", mode: "no-cors" });
-    console.log("[Favicon] fetch success, response:", response);
     return { url: faviconUrl, failed: false };
   } catch (e) {
     console.error("[Favicon] fetch failed, showing toast:", e);
@@ -267,6 +304,7 @@ export default function Home() {
 
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [matchedHistory, setMatchedHistory] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [isFocused, setIsFocused] = useState(false);
@@ -287,10 +325,14 @@ export default function Home() {
   const [editingIcon, setEditingIcon] = useState<string | null>(null);
   const [editingAutoFavicon, setEditingAutoFavicon] = useState(true);
   const [showAppSettings, setShowAppSettings] = useState(false);
-  const [showSeconds, setShowSeconds] = useState(true);
+  const [showSeconds, setShowSeconds] = useState(false);
   const [showClock, setShowClock] = useState(true);
   const [showDate, setShowDate] = useState(true);
   const [showBrandName, setShowBrandName] = useState(true);
+  const [showSearchHistory, setShowSearchHistory] = useState(true);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(true);
+  const [searchHistoryLimit, setSearchHistoryLimit] = useState(3);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
@@ -333,43 +375,47 @@ export default function Home() {
 
   useEffect(() => {
     const loadSettings = async () => {
-      console.log("[Settings] loadSettings called");
       const saved = await getAppSettingsFromDB();
-      console.log("[Settings] loadSettings got:", saved);
       if (saved) {
         if (saved.version === SETTINGS_VERSION) {
-          console.log("[Settings] using saved settings with matching version");
           setShowSeconds(saved.showSeconds);
           setShowClock(saved.showClock);
           setShowDate(saved.showDate);
           setShowBrandName(saved.showBrandName);
+          setShowSearchHistory(saved.showSearchHistory ?? true);
+          setShowSearchSuggestions(saved.showSearchSuggestions ?? true);
+          setSearchHistoryLimit(saved.searchHistoryLimit ?? 3);
         } else {
-          console.log("[Settings] version mismatch, applying migration (showSeconds=false)");
           setShowSeconds(false);
           setShowClock(saved.showClock ?? true);
           setShowDate(saved.showDate ?? true);
           setShowBrandName(saved.showBrandName ?? true);
+          setShowSearchHistory(saved.showSearchHistory ?? true);
+          setShowSearchSuggestions(saved.showSearchSuggestions ?? true);
+          setSearchHistoryLimit(saved.searchHistoryLimit ?? 3);
         }
       } else {
-        console.log("[Settings] no saved settings found, using defaults");
       }
+      const history = await getSearchHistoryFromDB();
+      setSearchHistory(history);
     };
     loadSettings();
   }, []);
 
   const saveAppSettings = useCallback(async () => {
-    console.log("[Settings] saveAppSettings called:", { showSeconds, showClock, showDate, showBrandName });
     await saveAppSettingsToDB({
       version: SETTINGS_VERSION,
       showSeconds,
       showClock,
       showDate,
       showBrandName,
+      showSearchHistory,
+      showSearchSuggestions,
+      searchHistoryLimit,
     });
-  }, [showSeconds, showClock, showDate, showBrandName]);
+  }, [showSeconds, showClock, showDate, showBrandName, showSearchHistory, showSearchSuggestions, searchHistoryLimit]);
 
   useEffect(() => {
-    console.log("[Settings] useEffect triggered, auto-saving:", { showSeconds, showClock, showDate, showBrandName });
     saveAppSettings();
   }, [saveAppSettings]);
 
@@ -465,17 +511,43 @@ export default function Home() {
     }
   }, []);
 
+  const truncateSuggestion = (suggestion: string, query: string): string => {
+    const maxLength = 13;
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (suggestion.length <= maxLength) {
+      return suggestion;
+    }
+
+    if (normalizedQuery) {
+      const matchIndex = suggestion.toLowerCase().indexOf(normalizedQuery);
+      if (matchIndex >= 0) {
+        const suffix = suggestion.slice(matchIndex + normalizedQuery.length);
+        if (suffix.length > 0) {
+          return "......" + suffix.slice(0, maxLength);
+        }
+      }
+    }
+
+    return "......" + suggestion.slice(-maxLength);
+  };
+
   const fetchSuggestions = useCallback(async (q: string) => {
     if (!q.trim()) {
       setSuggestions([]);
+      setMatchedHistory([]);
       return;
     }
     try {
       const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       setSuggestions(data.slice(0, 8));
+      const history = await getSearchHistoryFromDB();
+      const matched = history.filter(h => h.toLowerCase().includes(q.toLowerCase())).slice(0, 5);
+      setMatchedHistory(matched);
     } catch {
       setSuggestions([]);
+      setMatchedHistory([]);
     }
   }, []);
 
@@ -484,13 +556,22 @@ export default function Home() {
     setQuery(val);
     setActiveSuggestion(-1);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 200);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 25);
     setShowSuggestions(true);
   };
 
-  const handleSearch = (q?: string) => {
+  const handleSearch = async (q?: string) => {
     const searchQuery = q ?? query;
     if (!searchQuery.trim()) return;
+    setQuery("");
+    setSuggestions([]);
+    setMatchedHistory([]);
+    setActiveSuggestion(-1);
+    if (showSearchHistory) {
+      await addToSearchHistory(searchQuery);
+      const history = await getSearchHistoryFromDB();
+      setSearchHistory(history);
+    }
     window.open(
       `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}`,
       "_blank"
@@ -499,20 +580,35 @@ export default function Home() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) {
+    const hasSuggestions = showSearchSuggestions && (suggestions?.length ?? 0) > 0;
+    const hasMatchedHistory = hasSuggestions && (matchedHistory?.length ?? 0) > 0;
+    const matchedCount = hasMatchedHistory ? (matchedHistory?.length ?? 0) : 0;
+    const suggestionCount = hasSuggestions ? (suggestions?.length ?? 0) : 0;
+    const totalItems = matchedCount + suggestionCount;
+
+    if (!showSuggestions || totalItems === 0) {
       if (e.key === "Enter") handleSearch();
       return;
     }
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveSuggestion((i) => Math.min(i + 1, suggestions.length - 1));
+      setActiveSuggestion((i) => Math.min(i + 1, totalItems - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveSuggestion((i) => Math.max(i - 1, -1));
     } else if (e.key === "Enter") {
       if (activeSuggestion >= 0) {
-        handleSearch(suggestions[activeSuggestion]);
-        setQuery(suggestions[activeSuggestion]);
+        if (activeSuggestion < matchedCount) {
+          const historyItem = matchedHistory[activeSuggestion];
+          setQuery(historyItem);
+          handleSearch(historyItem);
+        } else {
+          const suggestionIndex = activeSuggestion - matchedCount;
+          const suggestionItem = suggestions[suggestionIndex];
+          setQuery(suggestionItem);
+          handleSearch(suggestionItem);
+        }
       } else {
         handleSearch();
       }
@@ -658,11 +754,13 @@ export default function Home() {
                   : "linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 100%)",
                 backdropFilter: "blur(16px) saturate(180%) brightness(1.05)",
                 WebkitBackdropFilter: "blur(16px) saturate(180%) brightness(1.05)",
-                borderRadius: showSuggestions && suggestions.length > 0 ? "18px 18px 0 0" : "18px",
+                borderRadius: showSuggestions && ((showSearchHistory && (searchHistory?.length ?? 0) > 0) || (showSearchSuggestions && (suggestions?.length ?? 0) > 0)) ? "18px 18px 0 0" : "18px",
                 borderWidth: "1.5px",
                 borderStyle: "solid",
-                borderColor: isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
-                borderBottomColor: showSuggestions && suggestions.length > 0
+                borderTopColor: isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
+                borderRightColor: isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
+                borderLeftColor: isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
+                borderBottomColor: showSuggestions && ((showSearchHistory && (searchHistory?.length ?? 0) > 0) || (showSearchSuggestions && (suggestions?.length ?? 0) > 0))
                   ? "rgba(255,255,255,0.08)"
                   : isActive ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.13)",
                 boxShadow: isActive
@@ -679,7 +777,7 @@ export default function Home() {
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                onFocus={() => { setIsFocused(true); if (query) setShowSuggestions(true); }}
+                onFocus={() => { setIsFocused(true); setShowSuggestions(true); }}
                 onBlur={() => setIsFocused(false)}
                 placeholder="搜索互联网..."
                 className="flex-1 bg-transparent px-4 py-[17px] text-[15.5px] outline-none"
@@ -752,9 +850,10 @@ export default function Home() {
               </button>
             </div>
 
-            {showSuggestions && suggestions.length > 0 && (
+            {showSuggestions && ((showSearchHistory && (searchHistory?.length ?? 0) > 0) || (showSearchSuggestions && (suggestions?.length ?? 0) > 0)) && (
               <div
                 ref={suggestionRef}
+                onMouseLeave={() => setActiveSuggestion(-1)}
                 className="w-full overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
                 style={{
                   background: "linear-gradient(180deg, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.07) 100%)",
@@ -766,53 +865,334 @@ export default function Home() {
                   boxShadow: "0 12px 40px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.12)",
                 }}
               >
-                {suggestions.map((s, i) => (
-                  <button
-                    key={i}
-                    className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left transition-colors duration-150"
-                    style={{
-                      background: i === activeSuggestion
-                        ? "rgba(255,255,255,0.09)"
-                        : "transparent",
-                      borderBottom:
-                        i < suggestions.length - 1
-                          ? "1px solid rgba(255,255,255,0.05)"
-                          : "none",
-                    }}
-                    onMouseEnter={() => setActiveSuggestion(i)}
-                    onMouseLeave={() => setActiveSuggestion(-1)}
-                    onClick={() => {
-                      setQuery(s);
-                      handleSearch(s);
-                    }}
-                  >
-                    <Search
-                      size={13}
-                      strokeWidth={1.8}
-                      style={{
-                        color: i === activeSuggestion
-                          ? "rgba(255,160,60,0.7)"
-                          : "rgba(255,255,255,0.18)",
-                        flexShrink: 0,
-                        transition: "color 0.15s",
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: 340,
-                        color: i === activeSuggestion
-                          ? "rgba(255,255,255,0.95)"
-                          : "rgba(255,255,255,0.58)",
-                        letterSpacing: "0.01em",
-                        textShadow: i === activeSuggestion ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
-                        transition: "color 0.15s, text-shadow 0.15s",
-                      }}
-                    >
-                      {s}
-                    </span>
-                  </button>
-                ))}
+                {showSearchSuggestions && showSearchHistory && !query && (searchHistory?.length ?? 0) > 0 && (
+                  <>
+                    {searchHistory.slice(0, searchHistoryLimit).map((h, i) => (
+                      <div
+                        key={`history-${i}`}
+                        className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left"
+                        style={{
+                          background: activeSuggestion === i
+                            ? "rgba(255,255,255,0.09)"
+                            : "transparent",
+                          borderBottom:
+                            i < Math.min(searchHistoryLimit, (searchHistory?.length ?? 0)) - 1
+                              ? "1px solid rgba(255,255,255,0.05)"
+                              : "none",
+                        }}
+                        onMouseEnter={() => setActiveSuggestion(i)}
+                        onMouseLeave={() => setActiveSuggestion(-1)}
+                        onClick={() => {
+                          setQuery(h);
+                          handleSearch(h);
+                        }}
+                      >
+                        <Clock
+                          size={13}
+                          strokeWidth={1.8}
+                          style={{
+                            color: activeSuggestion === i
+                              ? "rgba(255,160,60,0.7)"
+                              : "rgba(255,255,255,0.18)",
+                            flexShrink: 0,
+                            transition: "color 0.15s",
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 340,
+                            color: activeSuggestion === i
+                              ? "rgba(255,255,255,0.95)"
+                              : "rgba(255,255,255,0.58)",
+                            letterSpacing: "0.01em",
+                            textShadow: activeSuggestion === i ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                            transition: "color 0.15s, text-shadow 0.15s",
+                          }}
+                        >
+                          {h}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newHistory = searchHistory.filter((_, idx) => idx !== i);
+                            saveSearchHistoryToDB(newHistory);
+                            setSearchHistory(newHistory);
+                          }}
+                          className="ml-auto p-1 rounded-full transition-colors"
+                          style={{
+                            color: "rgba(255,255,255,0.2)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = "rgba(255,100,100,0.7)";
+                            e.currentTarget.style.background = "rgba(255,100,100,0.1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = "rgba(255,255,255,0.2)";
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          <X size={12} strokeWidth={2} />
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {showSearchSuggestions && !showSearchHistory && query && (suggestions?.length ?? 0) > 0 && (
+                  <>
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={`suggestion-${i}`}
+                        className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left"
+                        style={{
+                          background: activeSuggestion === i
+                            ? "rgba(0,0,0,0.18)"
+                            : "transparent",
+                          borderBottom:
+                            i < (suggestions?.length ?? 0) - 1
+                              ? "1px solid rgba(255,255,255,0.05)"
+                              : "none",
+                        }}
+                        onMouseEnter={() => setActiveSuggestion(i)}
+                        onMouseLeave={() => setActiveSuggestion(-1)}
+                        onClick={() => {
+                          setQuery(s);
+                          handleSearch(s);
+                        }}
+                      >
+                        <Search
+                          size={13}
+                          strokeWidth={1.8}
+                          style={{
+                            color: activeSuggestion === i
+                              ? "rgba(255,160,60,0.7)"
+                              : "rgba(255,255,255,0.18)",
+                            flexShrink: 0,
+                            transition: "color 0.15s",
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 340,
+                            color: activeSuggestion === i
+                              ? "rgba(255,255,255,0.95)"
+                              : "rgba(255,255,255,0.58)",
+                            letterSpacing: "0.01em",
+                            textShadow: activeSuggestion === i ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                            transition: "color 0.15s, text-shadow 0.15s",
+                          }}
+                        >
+                          {truncateSuggestion(s, query)}
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {!showSearchSuggestions && showSearchHistory && (searchHistory?.length ?? 0) > 0 && (
+                  <>
+                    {(query ? matchedHistory : searchHistory).slice(0, query ? undefined : searchHistoryLimit).map((h, i) => (
+                      <div
+                        key={`history-${i}`}
+                        className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left"
+                        style={{
+                          background: activeSuggestion === i
+                            ? "rgba(0,0,0,0.18)"
+                            : "transparent",
+                          borderBottom:
+                            i < (query ? (matchedHistory?.length ?? 0) : Math.min(searchHistoryLimit, (searchHistory?.length ?? 0))) - 1
+                              ? "1px solid rgba(255,255,255,0.05)"
+                              : "none",
+                        }}
+                        onMouseEnter={() => setActiveSuggestion(i)}
+                        onMouseLeave={() => setActiveSuggestion(-1)}
+                        onClick={() => {
+                          setQuery(h);
+                          handleSearch(h);
+                        }}
+                      >
+                        <Clock
+                          size={13}
+                          strokeWidth={1.8}
+                          style={{
+                            color: activeSuggestion === i
+                              ? "rgba(255,160,60,0.7)"
+                              : "rgba(255,255,255,0.18)",
+                            flexShrink: 0,
+                            transition: "color 0.15s",
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 340,
+                            color: activeSuggestion === i
+                              ? "rgba(255,255,255,0.95)"
+                              : "rgba(255,255,255,0.58)",
+                            letterSpacing: "0.01em",
+                            textShadow: activeSuggestion === i ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                            transition: "color 0.15s, text-shadow 0.15s",
+                          }}
+                        >
+                          {h}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newHistory = searchHistory.filter((_, idx) => idx !== i);
+                            saveSearchHistoryToDB(newHistory);
+                            setSearchHistory(newHistory);
+                          }}
+                          className="ml-auto p-1 rounded-full transition-colors"
+                          style={{
+                            color: "rgba(255,255,255,0.2)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = "rgba(255,100,100,0.7)";
+                            e.currentTarget.style.background = "rgba(255,100,100,0.1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = "rgba(255,255,255,0.2)";
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          <X size={12} strokeWidth={2} />
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {showSearchSuggestions && showSearchHistory && query && (suggestions?.length ?? 0) > 0 && (
+                  <>
+                    {(matchedHistory?.length ?? 0) > 0 && (
+                      <>
+                        {matchedHistory.map((h, i) => (
+                          <div
+                            key={`matched-history-${i}`}
+                            className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left"
+                            style={{
+                              background: activeSuggestion === i
+                                ? "rgba(255,255,255,0.09)"
+                                : "transparent",
+                              borderBottom:
+                                i < (matchedHistory?.length ?? 0) - 1
+                                  ? "1px solid rgba(255,255,255,0.05)"
+                                  : "none",
+                            }}
+                            onMouseEnter={() => setActiveSuggestion(i)}
+                            onMouseLeave={() => setActiveSuggestion(-1)}
+                            onClick={() => {
+                              setQuery(h);
+                              handleSearch(h);
+                            }}
+                          >
+                            <Clock
+                              size={13}
+                              strokeWidth={1.8}
+                              style={{
+                                color: activeSuggestion === i
+                                  ? "rgba(255,160,60,0.7)"
+                                  : "rgba(255,255,255,0.18)",
+                                flexShrink: 0,
+                                transition: "color 0.15s",
+                              }}
+                            />
+                            <span
+                              style={{
+                                fontSize: "14px",
+                                fontWeight: 340,
+                                color: activeSuggestion === i
+                                  ? "rgba(255,255,255,0.95)"
+                                  : "rgba(255,255,255,0.58)",
+                                letterSpacing: "0.01em",
+                                textShadow: activeSuggestion === i ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                                transition: "color 0.15s, text-shadow 0.15s",
+                              }}
+                            >
+                              {h}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newHistory = searchHistory.filter((_, idx) => idx !== i);
+                                saveSearchHistoryToDB(newHistory);
+                                setSearchHistory(newHistory);
+                              }}
+                              className="ml-auto p-1 rounded-full transition-colors"
+                              style={{
+                                color: "rgba(255,255,255,0.2)",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.color = "rgba(255,100,100,0.7)";
+                                e.currentTarget.style.background = "rgba(255,100,100,0.1)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.color = "rgba(255,255,255,0.2)";
+                                e.currentTarget.style.background = "transparent";
+                              }}
+                            >
+                              <X size={12} strokeWidth={2} />
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={`suggestion-${i}`}
+                        className="flex items-center gap-3 w-full px-[22px] py-[11px] text-left transition-colors duration-150"
+                        style={{
+                          background: activeSuggestion === (matchedHistory?.length ?? 0) + i
+                            ? "rgba(0,0,0,0.18)"
+                            : "transparent",
+                          borderBottom:
+                            i < (suggestions?.length ?? 0) - 1
+                              ? "1px solid rgba(255,255,255,0.05)"
+                              : "none",
+                        }}
+                        onMouseEnter={() => setActiveSuggestion((matchedHistory?.length ?? 0) + i)}
+                        onMouseLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setActiveSuggestion(-1);
+                          }
+                        }}
+                        onClick={() => {
+                          setQuery(s);
+                          handleSearch(s);
+                        }}
+                      >
+                        <Search
+                          size={13}
+                          strokeWidth={1.8}
+                          style={{
+                            color: activeSuggestion === (matchedHistory?.length ?? 0) + i
+                              ? "rgba(255,160,60,0.7)"
+                              : "rgba(255,255,255,0.18)",
+                            flexShrink: 0,
+                            transition: "color 0.15s",
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 340,
+                            color: activeSuggestion === (matchedHistory?.length ?? 0) + i
+                              ? "rgba(255,255,255,0.95)"
+                              : "rgba(255,255,255,0.58)",
+                            letterSpacing: "0.01em",
+                            textShadow: activeSuggestion === (matchedHistory?.length ?? 0) + i ? "0 1px 8px rgba(0,0,0,0.2)" : "none",
+                            transition: "color 0.15s, text-shadow 0.15s",
+                          }}
+                        >
+                          {truncateSuggestion(s, query)}
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -880,7 +1260,7 @@ export default function Home() {
                 zIndex: 100,
                 left: Math.max(0, Math.min(contextPosition.x, window.innerWidth - 200)),
                 top: Math.max(0, Math.min(contextPosition.y, window.innerHeight - 100)),
-                background: "linear-gradient(135deg, rgba(30,30,35,0.92) 0%, rgba(20,20,25,0.95) 100%)",
+                background: "linear-gradient(135deg, rgba(30,30,35,0.78) 0%, rgba(20,20,25,0.82) 100%)",
                 backdropFilter: "blur(20px) saturate(180%)",
                 WebkitBackdropFilter: "blur(20px) saturate(180%)",
                 border: "1.5px solid rgba(255,255,255,0.15)",
@@ -938,8 +1318,8 @@ export default function Home() {
               style={{
                 zIndex: 100,
                 left: Math.max(0, Math.min(settingsPosition.x, window.innerWidth - 320)),
-                top: Math.max(0, Math.min(settingsPosition.y, window.innerHeight - 350)),
-                background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
+                top: Math.max(20, Math.min(settingsPosition.y, window.innerHeight - 400)),
+                background: "linear-gradient(135deg, rgba(30,30,35,0.80) 0%, rgba(20,20,25,0.85) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
                 border: "1.5px solid rgba(255,255,255,0.15)",
@@ -1049,6 +1429,80 @@ export default function Home() {
                     />
                   </button>
                 </label>
+
+                <div className="border-t border-b border-white/[0.05] my-3" />
+
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示搜索历史</span>
+                  <button
+                    onClick={() => setShowSearchHistory(!showSearchHistory)}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showSearchHistory ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showSearchHistory ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>显示搜索建议</span>
+                  <button
+                    onClick={() => setShowSearchSuggestions(!showSearchSuggestions)}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: showSearchSuggestions ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: showSearchSuggestions ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </label>
+
+                {showSearchHistory && (
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.55)" }}>历史显示数量</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {[2, 3, 5, 8].map((num) => (
+                        <button
+                          key={num}
+                          onClick={() => setSearchHistoryLimit(num)}
+                          className="flex-1 py-1.5 rounded-lg text-xs transition-all duration-200"
+                          style={{
+                            background: searchHistoryLimit === num ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.06)",
+                            color: searchHistoryLimit === num ? "#ffffff" : "rgba(255,255,255,0.55)",
+                            border: searchHistoryLimit === num ? "none" : "1px solid rgba(255,255,255,0.08)",
+                            fontWeight: searchHistoryLimit === num ? 500 : 400,
+                          }}
+                        >
+                          {num}条
+                        </button>
+                      ))}
+                    </div>
+                    {searchHistoryLimit >= 8 && (
+                      <div className="mt-2 px-2 py-1.5 rounded-lg" style={{ background: "rgba(255,140,50,0.12)", border: "1px solid rgba(255,140,50,0.25)" }}>
+                        <span style={{ fontSize: "11px", color: "rgba(255,160,80,0.85)" }}>
+                          显示过多历史可能降低搜索体验
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1061,7 +1515,7 @@ export default function Home() {
                 zIndex: 100,
                 left: Math.max(0, Math.min(settingsPosition.x, window.innerWidth - 380)),
                 top: Math.max(20, Math.min(settingsPosition.y, window.innerHeight - 550)),
-                background: "linear-gradient(135deg, rgba(30,30,35,0.94) 0%, rgba(20,20,25,0.96) 100%)",
+                background: "linear-gradient(135deg, rgba(30,30,35,0.80) 0%, rgba(20,20,25,0.85) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
                 border: "1.5px solid rgba(255,255,255,0.15)",
