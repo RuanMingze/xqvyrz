@@ -12,7 +12,7 @@ const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/2559941/pexels-photo-2559941.jpeg?auto=compress&cs=tinysrgb&w=1920",
   "https://images.pexels.com/photos/1366919/pexels-photo-1366919.jpeg?auto=compress&cs=tinysrgb&w=1920",
   "https://images.pexels.com/photos/210186/pexels-photo-210186.jpeg?auto=compress&cs=tinysrgb&w=1920",
-  "https://images.pexels.com/photos/1462951/pexels-photo-1462951.jpeg?auto=compress&cs=tinysrgb&w=1920",
+  "https://images.pexels.com/photos/1450360/pexels-photo-1450360.jpeg?auto=compress&cs=tinysrgb&w=1920",
   "https://images.pexels.com/photos/933498/pexels-photo-933498.jpeg?auto=compress&cs=tinysrgb&w=1920",
   "https://images.pexels.com/photos/1470505/pexels-photo-1470505.jpeg?auto=compress&cs=tinysrgb&w=1920",
   "https://images.pexels.com/photos/2116475/pexels-photo-2116475.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -44,6 +44,36 @@ function getDailyWallpaper(): string {
   let s = seed;
   s = ((s * 16807) % 2147483647) | 0;
   return WALLPAPER_POOL[s % WALLPAPER_POOL.length];
+}
+
+async function getWallpaperFromDB(): Promise<string | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get("customWallpaper");
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function saveWallpaperToDB(dataUrl: string): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(dataUrl, "customWallpaper");
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+    });
+  } catch {
+    return;
+  }
 }
 
 interface QuickLink {
@@ -300,7 +330,9 @@ async function fetchFaviconWithCheck(url: string): Promise<{ url: string | null;
 }
 
 export default function Home() {
-  const wallpaper = useMemo(() => getDailyWallpaper(), []);
+  const [wallpaper, setWallpaper] = useState<string>(getDailyWallpaper());
+  const [wallpaperSource, setWallpaperSource] = useState<"library" | "local">("library");
+  const [dailyWallpaperEnabled, setDailyWallpaperEnabled] = useState(false);
 
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -315,6 +347,8 @@ export default function Home() {
   const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPosition, setSettingsPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showWallpaperSettings, setShowWallpaperSettings] = useState(false);
+  const [wallpaperPosition, setWallpaperPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [newLinkLabel, setNewLinkLabel] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [newLinkIcon, setNewLinkIcon] = useState<string | null>(null);
@@ -337,8 +371,86 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const newIconInputRef = useRef<HTMLInputElement>(null);
   const editIconInputRef = useRef<HTMLInputElement>(null);
+
+  const applyWallpaper = useCallback((nextWallpaper: string, source: "library" | "local", options?: { keepDaily?: boolean; persist?: boolean; lastDailyChange?: number }) => {
+    setWallpaper(nextWallpaper);
+    setWallpaperSource(source);
+    if (options?.persist !== false) {
+      window.localStorage.setItem("xqvyrz-wallpaper", nextWallpaper);
+      window.localStorage.setItem("xqvyrz-wallpaper-source", source);
+      if (options?.lastDailyChange) {
+        window.localStorage.setItem("xqvyrz-wallpaper-last-daily", String(options.lastDailyChange));
+      }
+    }
+    if (source === "local") {
+      saveWallpaperToDB(nextWallpaper);
+    }
+  }, []);
+
+  const randomizeWallpaper = useCallback(() => {
+    const nextWallpaper = WALLPAPER_POOL[Math.floor(Math.random() * WALLPAPER_POOL.length)];
+    const now = Date.now();
+    window.localStorage.setItem("xqvyrz-wallpaper", nextWallpaper);
+    window.localStorage.setItem("xqvyrz-wallpaper-source", "library");
+    window.localStorage.setItem("xqvyrz-wallpaper-last-daily", String(now));
+    setWallpaper(nextWallpaper);
+    setWallpaperSource("library");
+  }, []);
+
+  const toggleDailyWallpaper = useCallback(() => {
+    const nextValue = !dailyWallpaperEnabled;
+    setDailyWallpaperEnabled(nextValue);
+    window.localStorage.setItem("xqvyrz-wallpaper-daily", nextValue ? "true" : "false");
+  }, [dailyWallpaperEnabled]);
+
+  const handleWallpaperFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      await saveWallpaperToDB(dataUrl);
+      applyWallpaper(dataUrl, "local", { persist: true });
+      setShowWallpaperSettings(false);
+      window.localStorage.setItem("xqvyrz-wallpaper-source", "local");
+      window.localStorage.setItem("xqvyrz-wallpaper", dataUrl);
+    };
+    reader.readAsDataURL(file);
+  }, [applyWallpaper]);
+
+  useEffect(() => {
+    const loadWallpaper = async () => {
+      const storedWallpaper = window.localStorage.getItem("xqvyrz-wallpaper");
+      const storedSource = window.localStorage.getItem("xqvyrz-wallpaper-source") as "library" | "local" | null;
+      const storedDaily = window.localStorage.getItem("xqvyrz-wallpaper-daily") === "true";
+      const storedLastDaily = Number(window.localStorage.getItem("xqvyrz-wallpaper-last-daily") || "0");
+      const customWallpaper = storedSource === "local" ? await getWallpaperFromDB() : null;
+      const initialWallpaper = storedWallpaper && (storedSource !== "local" || customWallpaper)
+        ? (storedSource === "local" ? customWallpaper || storedWallpaper : storedWallpaper)
+        : getDailyWallpaper();
+      setWallpaper(initialWallpaper);
+      setWallpaperSource(storedSource === "local" ? "local" : "library");
+      setDailyWallpaperEnabled(storedDaily);
+      if (storedDaily && storedLastDaily && Date.now() - storedLastDaily > 24 * 60 * 60 * 1000) {
+        randomizeWallpaper();
+      }
+    };
+    loadWallpaper();
+  }, [randomizeWallpaper]);
+
+  useEffect(() => {
+    if (!dailyWallpaperEnabled) return;
+    const id = window.setInterval(() => {
+      const lastDaily = Number(window.localStorage.getItem("xqvyrz-wallpaper-last-daily") || "0");
+      if (Date.now() - lastDaily > 24 * 60 * 60 * 1000) {
+        randomizeWallpaper();
+      }
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, [dailyWallpaperEnabled, randomizeWallpaper]);
 
   useEffect(() => {
     const update = () => {
@@ -650,6 +762,12 @@ export default function Home() {
     setShowContextMenu(false);
   }, [contextPosition]);
 
+  const openWallpaperSettings = useCallback(() => {
+    setWallpaperPosition(contextPosition);
+    setShowWallpaperSettings(true);
+    setShowContextMenu(false);
+  }, [contextPosition]);
+
   useEffect(() => {
     if (!showContextMenu) return;
     const handler = () => setShowContextMenu(false);
@@ -684,6 +802,18 @@ export default function Home() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showAppSettings]);
+
+  useEffect(() => {
+    if (!showWallpaperSettings) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-wallpaper-settings-panel]")) {
+        setShowWallpaperSettings(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showWallpaperSettings]);
 
   const isActive = isFocused || query.length > 0;
 
@@ -1259,7 +1389,7 @@ export default function Home() {
               style={{
                 zIndex: 100,
                 left: Math.max(0, Math.min(contextPosition.x, window.innerWidth - 200)),
-                top: Math.max(0, Math.min(contextPosition.y, window.innerHeight - 100)),
+                top: Math.max(0, Math.min(contextPosition.y, window.innerHeight - 140)),
                 background: "linear-gradient(135deg, rgba(30,30,35,0.78) 0%, rgba(20,20,25,0.82) 100%)",
                 backdropFilter: "blur(20px) saturate(180%)",
                 WebkitBackdropFilter: "blur(20px) saturate(180%)",
@@ -1308,6 +1438,26 @@ export default function Home() {
                 <Settings size={14} strokeWidth={1.8} />
                 应用设置
               </button>
+              <div className="h-px mx-3.5 bg-gradient-to-r from-transparent via-rgba(255,255,255,0.12) to-transparent" />
+              <button
+                onClick={openWallpaperSettings}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors"
+                style={{
+                  fontSize: "13px",
+                  color: "rgba(255,255,255,0.85)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,140,50,0.18)";
+                  e.currentTarget.style.color = "#ffffff";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "rgba(255,255,255,0.85)";
+                }}
+              >
+                <Upload size={14} strokeWidth={1.8} />
+                修改壁纸
+              </button>
             </div>
           )}
 
@@ -1318,7 +1468,7 @@ export default function Home() {
               style={{
                 zIndex: 100,
                 left: Math.max(0, Math.min(settingsPosition.x, window.innerWidth - 320)),
-                top: Math.max(20, Math.min(settingsPosition.y, window.innerHeight - 400)),
+                top: Math.max(20, Math.min(settingsPosition.y, window.innerHeight - 260)),
                 background: "linear-gradient(135deg, rgba(30,30,35,0.80) 0%, rgba(20,20,25,0.85) 100%)",
                 backdropFilter: "blur(24px) saturate(180%)",
                 WebkitBackdropFilter: "blur(24px) saturate(180%)",
@@ -1503,6 +1653,113 @@ export default function Home() {
                     )}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {showWallpaperSettings && (
+            <div
+              data-wallpaper-settings-panel
+              className="fixed w-[360px] rounded-xl p-5 animate-in fade-in zoom-in-95 duration-200"
+              style={{
+                zIndex: 100,
+                left: Math.max(0, Math.min(wallpaperPosition.x, window.innerWidth - 380)),
+                top: Math.max(20, Math.min(wallpaperPosition.y, window.innerHeight - 450)),
+                background: "linear-gradient(135deg, rgba(30,30,35,0.80) 0%, rgba(20,20,25,0.85) 100%)",
+                backdropFilter: "blur(24px) saturate(180%)",
+                WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                border: "1.5px solid rgba(255,255,255,0.15)",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em" }}>
+                  壁纸设置
+                </span>
+                <button
+                  onClick={() => setShowWallpaperSettings(false)}
+                  className="p-1 rounded-full transition-colors"
+                  style={{ color: "rgba(255,255,255,0.4)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.4)"}
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>每天自动换壁纸</span>
+                  <button
+                    onClick={toggleDailyWallpaper}
+                    className="w-[36px] h-[20px] rounded-full transition-all duration-200 relative"
+                    style={{
+                      background: dailyWallpaperEnabled ? "rgba(255,140,50,0.75)" : "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <div
+                      className="absolute top-[2px] w-[16px] h-[16px] rounded-full transition-all duration-200"
+                      style={{
+                        left: dailyWallpaperEnabled ? "18px" : "2px",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      randomizeWallpaper();
+                      setShowWallpaperSettings(false);
+                    }}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+                    style={{ background: "rgba(255,140,50,0.75)", color: "#fff" }}
+                  >
+                    随机换一张
+                  </button>
+                  <button
+                    onClick={() => wallpaperInputRef.current?.click()}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+                    style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.9)" }}
+                  >
+                    从本地选择
+                  </button>
+                </div>
+
+                <input
+                  ref={wallpaperInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleWallpaperFile}
+                />
+
+                <div className="rounded-lg p-2" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="mb-2 text-xs uppercase tracking-[0.2em]" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    当前壁纸库
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {WALLPAPER_POOL.slice(0, 9).map((image, index) => (
+                      <button
+                        key={`${image}-${index}`}
+                        type="button"
+                        onClick={() => {
+                          applyWallpaper(image, "library", { persist: true, lastDailyChange: Date.now() });
+                        }}
+                        className={`aspect-[16/10] rounded-lg border overflow-hidden bg-cover bg-center ${wallpaper === image ? "border-orange-400" : "border-white/10"}`}
+                        style={{ backgroundImage: `url(${image})` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  当前来源：{wallpaperSource === "local" ? "本地上传" : "内置壁纸库"}
+                </div>
               </div>
             </div>
           )}
