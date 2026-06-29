@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, X, ArrowRight, Settings, Plus, Trash2, Check, Upload, Clock } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
 
 const WALLPAPER_POOL = [
   "https://images.pexels.com/photos/1261728/pexels-photo-1261728.jpeg?auto=compress&cs=tinysrgb&w=1920",
@@ -309,24 +308,15 @@ function extractDomain(url: string): string | null {
   }
 }
 
-async function fetchFaviconWithCheck(url: string): Promise<{ url: string | null; failed: boolean }> {
+function fetchFaviconWithCheck(url: string): { url: string | null; failed: boolean } {
   const domain = extractDomain(url);
   if (!domain) {
     return { url: null, failed: true };
   }
-  const faviconUrl = `https://${domain}/favicon.ico`;
-  try {
-    const response = await fetch(faviconUrl, { method: "HEAD", mode: "no-cors" });
-    return { url: faviconUrl, failed: false };
-  } catch (e) {
-    console.error("[Favicon] fetch failed, showing toast:", e);
-    toast({
-      title: "图标获取失败",
-      description: `无法获取 ${domain} 的网站图标`,
-      duration: 3000,
-    });
-    return { url: null, failed: true };
-  }
+
+  // 使用 icon.wr.do - 聚合了多个 favicon 源的 proxy 服务
+  const faviconUrl = `https://icon.wr.do/${domain}.ico`;
+  return { url: faviconUrl, failed: false };
 }
 
 export default function Home() {
@@ -541,7 +531,7 @@ export default function Home() {
     saveQuickLinks(newLinks);
   }, [quickLinks, saveQuickLinks]);
 
-  const addQuickLink = useCallback(async () => {
+  const addQuickLink = useCallback(() => {
     if (!newLinkLabel.trim() || !newLinkUrl.trim()) return;
     const newLink: QuickLink = {
       label: newLinkLabel.trim(),
@@ -549,7 +539,7 @@ export default function Home() {
       iconBase64: newLinkIcon || undefined,
     };
     if (!newLinkIcon && newLinkAutoFavicon) {
-      const { url: faviconUrl } = await fetchFaviconWithCheck(newLinkUrl.trim());
+      const { url: faviconUrl } = fetchFaviconWithCheck(newLinkUrl.trim());
       if (faviconUrl) newLink.iconUrl = faviconUrl;
     }
     saveQuickLinks([...quickLinks, newLink]);
@@ -567,7 +557,7 @@ export default function Home() {
     setEditingIcon(link.iconBase64 || null);
   }, [quickLinks]);
 
-  const saveEdit = useCallback(async () => {
+  const saveEdit = useCallback(() => {
     if (editingIndex === null) return;
     const newLink: QuickLink = {
       label: editingLabel.trim(),
@@ -575,7 +565,7 @@ export default function Home() {
       iconBase64: editingIcon || undefined,
     };
     if (!editingIcon && editingAutoFavicon) {
-      const { url: faviconUrl } = await fetchFaviconWithCheck(editingUrl.trim());
+      const { url: faviconUrl } = fetchFaviconWithCheck(editingUrl.trim());
       if (faviconUrl) newLink.iconUrl = faviconUrl;
     }
     const newLinks = [...quickLinks];
@@ -745,6 +735,10 @@ export default function Home() {
   }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    // 如果按住了 Ctrl 键，显示浏览器默认右键菜单
+    if (e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     setContextPosition({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
