@@ -12,12 +12,20 @@ setInterval(updateClock, 1000);
 // ---- 搜索按钮状态 ----
 function toggleBtn() {
   var btn = document.getElementById('btn');
-  if (document.getElementById('query').value.trim()) {
+  var query = document.getElementById('query');
+  if (!btn || !query) return;
+  if (query.value.trim()) {
     btn.classList.add('has-query');
   } else {
     btn.classList.remove('has-query');
   }
 }
+
+var queryInput = document.getElementById('query');
+if (queryInput) {
+  queryInput.addEventListener('input', toggleBtn);
+}
+toggleBtn();
 
 // ---- 搜索（打开新标签页） ----
 document.getElementById('searchForm').addEventListener('submit', function (e) {
